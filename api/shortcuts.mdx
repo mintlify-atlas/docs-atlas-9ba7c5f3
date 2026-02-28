@@ -1,0 +1,460 @@
+---
+title: Shortcuts
+description: API endpoints for managing memo filter shortcuts in Memos
+---
+
+## Overview
+
+Shortcuts are saved filters that allow users to quickly access commonly used memo views. Each shortcut consists of a title and a CEL filter expression. Shortcuts are user-specific and stored as user settings.
+
+## List Shortcuts
+
+<Note>
+Retrieves all shortcuts for a specific user. Users can only access their own shortcuts.
+</Note>
+
+```bash GET /api/v1/users/{user_id}/shortcuts
+curl https://your-memos-instance.com/api/v1/users/101/shortcuts \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="user_id" type="string" required>
+  The ID of the user whose shortcuts to retrieve. Format: `users/{user_id}`
+</ParamField>
+
+### Response
+
+<ResponseField name="shortcuts" type="array">
+  Array of shortcut objects
+  
+  <Expandable title="shortcut object">
+    <ResponseField name="name" type="string">
+      The resource name of the shortcut. Format: `users/{user_id}/shortcuts/{shortcut_id}`
+    </ResponseField>
+    
+    <ResponseField name="title" type="string">
+      The display title of the shortcut (e.g., "Work Notes", "Important")
+    </ResponseField>
+    
+    <ResponseField name="filter" type="string">
+      CEL expression that defines the filter (e.g., `has_tag("work") && pinned == true`)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid user name format
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User cannot access another user's shortcuts
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "shortcuts": [
+    {
+      "name": "users/101/shortcuts/abc123",
+      "title": "Work Notes",
+      "filter": "has_tag(\"work\")"
+    },
+    {
+      "name": "users/101/shortcuts/def456",
+      "title": "Pinned & Recent",
+      "filter": "pinned == true && create_time > timestamp(\"2024-01-01T00:00:00Z\")"
+    }
+  ]
+}
+```
+
+---
+
+## Get Shortcut
+
+<Note>
+Retrieves a single shortcut by its ID.
+</Note>
+
+```bash GET /api/v1/users/{user_id}/shortcuts/{shortcut_id}
+curl https://your-memos-instance.com/api/v1/users/101/shortcuts/abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="user_id" type="string" required>
+  The ID of the user who owns the shortcut
+</ParamField>
+
+<ParamField path="shortcut_id" type="string" required>
+  The ID of the shortcut to retrieve
+</ParamField>
+
+### Response
+
+Returns a shortcut object (same structure as in List Shortcuts).
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid shortcut name format
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User cannot access another user's shortcuts
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Shortcut does not exist
+</ResponseField>
+
+---
+
+## Create Shortcut
+
+<Note>
+Creates a new shortcut for a user. The filter expression is validated before creation.
+</Note>
+
+```bash POST /api/v1/users/{user_id}/shortcuts
+curl -X POST https://your-memos-instance.com/api/v1/users/101/shortcuts \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "shortcut": {
+      "title": "Work Notes",
+      "filter": "has_tag(\"work\")"
+    }
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="user_id" type="string" required>
+  The ID of the user who will own the shortcut. Format: `users/{user_id}`
+</ParamField>
+
+### Request Body
+
+<ParamField body="shortcut" type="object" required>
+  The shortcut to create
+  
+  <Expandable title="properties">
+    <ParamField body="title" type="string" required>
+      Display title for the shortcut (e.g., "Work Notes", "Personal", "This Week")
+    </ParamField>
+    
+    <ParamField body="filter" type="string">
+      CEL filter expression. If empty or not provided, defaults to an empty filter.
+      
+      See [Filter Expressions](#filter-expressions) for syntax and examples.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="validate_only" type="boolean">
+  If true, validates the shortcut without actually creating it. Useful for testing filter syntax. Default: `false`
+</ParamField>
+
+### Response
+
+Returns the created shortcut object with a generated `shortcut_id` in the `name` field.
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument**
+  - Missing required `title` field
+  - Invalid filter expression syntax
+  - Filter references unsupported fields or operators
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User cannot create shortcuts for another user
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "name": "users/101/shortcuts/abc123xyz",
+  "title": "Work Notes",
+  "filter": "has_tag(\"work\")"
+}
+```
+
+---
+
+## Update Shortcut
+
+<Note>
+Updates specific fields of a shortcut using field masks. The filter is validated if being updated.
+</Note>
+
+```bash PATCH /api/v1/users/{user_id}/shortcuts/{shortcut_id}
+curl -X PATCH https://your-memos-instance.com/api/v1/users/101/shortcuts/abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "shortcut": {
+      "name": "users/101/shortcuts/abc123",
+      "title": "Work & Projects",
+      "filter": "has_tag(\"work\") || has_tag(\"project\")"
+    },
+    "update_mask": {
+      "paths": ["title", "filter"]
+    }
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="user_id" type="string" required>
+  The ID of the user who owns the shortcut
+</ParamField>
+
+<ParamField path="shortcut_id" type="string" required>
+  The ID of the shortcut to update
+</ParamField>
+
+### Request Body
+
+<ParamField body="shortcut" type="object" required>
+  The shortcut object with updated fields. Must include `name` field.
+</ParamField>
+
+<ParamField body="update_mask" type="object">
+  Specifies which fields to update. If omitted, all fields are updated.
+  
+  <Expandable title="paths">
+    <ParamField body="paths" type="array">
+      Array of field paths to update: `["title", "filter"]`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Updatable Fields
+
+- `title` - Display title (cannot be empty)
+- `filter` - Filter expression (validated before update)
+
+### Response
+
+Returns the updated shortcut object.
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument**
+  - Empty title
+  - Invalid filter expression
+  - Missing or empty update_mask
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User cannot update another user's shortcuts
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Shortcut does not exist
+</ResponseField>
+
+---
+
+## Delete Shortcut
+
+<Note>
+Deletes a shortcut. This operation is permanent.
+</Note>
+
+```bash DELETE /api/v1/users/{user_id}/shortcuts/{shortcut_id}
+curl -X DELETE https://your-memos-instance.com/api/v1/users/101/shortcuts/abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="user_id" type="string" required>
+  The ID of the user who owns the shortcut
+</ParamField>
+
+<ParamField path="shortcut_id" type="string" required>
+  The ID of the shortcut to delete
+</ParamField>
+
+### Response
+
+Returns empty response on success.
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid shortcut name format
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User cannot delete another user's shortcuts
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Shortcut does not exist
+</ResponseField>
+
+---
+
+## Filter Expressions
+
+<Note>
+Shortcuts use CEL (Common Expression Language) for defining filter criteria. The filter is compiled and validated against the database schema.
+</Note>
+
+### Supported Fields
+
+- `creator_id` - Creator's user ID (integer)
+- `create_time` - Creation timestamp
+- `update_time` - Last update timestamp
+- `display_time` - Display timestamp for sorting
+- `visibility` - Visibility level: `"PRIVATE"`, `"PROTECTED"`, or `"PUBLIC"`
+- `pinned` - Boolean pinned status
+- `content` - Full memo content (use with caution, may be slow)
+- `name` - Memo resource name
+
+### Supported Operators
+
+- **Comparison**: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- **Logical**: `&&` (AND), `||` (OR), `!` (NOT)
+- **Membership**: `in` (e.g., `visibility in ["PUBLIC", "PROTECTED"]`)
+- **String**: `.contains()`, `.startsWith()`, `.endsWith()`
+
+### Built-in Functions
+
+#### `has_tag(tag_name)`
+
+Checks if a memo contains a specific tag.
+
+```
+has_tag("work")
+has_tag("important") && has_tag("urgent")
+```
+
+#### `timestamp(iso_string)`
+
+Converts an ISO 8601 timestamp string to a timestamp for comparison.
+
+```
+create_time > timestamp("2024-01-01T00:00:00Z")
+```
+
+### Example Filters
+
+#### All work-related memos
+```
+has_tag("work")
+```
+
+#### Pinned public memos
+```
+pinned == true && visibility == "PUBLIC"
+```
+
+#### Recent memos (last 7 days)
+```
+create_time > timestamp("2024-01-08T00:00:00Z")
+```
+
+#### Memos from specific creator
+```
+creator_id == 101
+```
+
+#### Multiple tags (AND)
+```
+has_tag("work") && has_tag("urgent")
+```
+
+#### Multiple tags (OR)
+```
+has_tag("personal") || has_tag("journal")
+```
+
+#### Complex combination
+```
+(has_tag("work") || has_tag("project")) && pinned == true && visibility != "PRIVATE"
+```
+
+#### Content search
+```
+content.contains("meeting notes")
+```
+
+#### Date range
+```
+create_time > timestamp("2024-01-01T00:00:00Z") && create_time < timestamp("2024-02-01T00:00:00Z")
+```
+
+### Database Dialect Support
+
+Filters are compiled to SQL and respect the database dialect:
+- **SQLite**: Default dialect
+- **MySQL**: Handles MySQL-specific syntax
+- **PostgreSQL**: Uses PostgreSQL-specific features
+
+The system automatically detects and uses the correct dialect based on your instance configuration.
+
+---
+
+## Best Practices
+
+### Naming Shortcuts
+
+- Use descriptive titles that clearly indicate the filter's purpose
+- Keep titles concise (e.g., "Work", "This Week", "Important")
+- Consider using emoji for visual distinction (e.g., "💼 Work", "⭐ Favorites")
+
+### Filter Performance
+
+- Prefer indexed fields like `creator_id`, `create_time`, and `visibility`
+- Avoid complex content searches on large datasets
+- Use specific date ranges instead of open-ended queries when possible
+- Test filters with `validate_only=true` before creating
+
+### Common Use Cases
+
+1. **Daily Journal**: `has_tag("journal") && create_time > timestamp("TODAY")`
+2. **Favorites**: `pinned == true`
+3. **Shared Memos**: `visibility == "PUBLIC"`
+4. **Work Tasks**: `has_tag("work") && content.contains("TODO")`
+5. **Recent Activity**: `update_time > timestamp("LAST_7_DAYS")`
+
+### Validation
+
+- Always validate filter syntax before creating shortcuts
+- Use the `validate_only` parameter to test filters
+- Check error messages for specific syntax issues
+- Test shortcuts with sample data to ensure expected results

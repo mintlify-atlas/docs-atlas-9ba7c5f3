@@ -1,0 +1,348 @@
+---
+title: 'Development Environment Setup'
+description: 'Set up your local development environment for Memos'
+---
+
+This guide walks you through setting up a complete development environment for Memos, including both backend (Go) and frontend (React) components.
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Backend Requirements" icon="golang">
+    - Go 1.25.7 or higher
+    - Protocol Buffers compiler (buf)
+    - golangci-lint for code linting
+  </Card>
+  <Card title="Frontend Requirements" icon="react">
+    - Node.js 22 or higher
+    - pnpm 10 or higher
+    - TypeScript knowledge
+  </Card>
+</CardGroup>
+
+## Backend Setup
+
+<Steps>
+  <Step title="Install Go">
+    Download and install Go 1.25.7 or higher from [go.dev](https://go.dev/dl/).
+
+    Verify your installation:
+    ```bash
+    go version
+    # Should output: go version go1.25.7 or higher
+    ```
+  </Step>
+
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/usememos/memos.git
+    cd memos
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Download Go dependencies:
+    ```bash
+    go mod download
+    ```
+
+    Verify dependencies are tidy:
+    ```bash
+    go mod tidy
+    ```
+  </Step>
+
+  <Step title="Install development tools">
+    Install golangci-lint for code quality:
+    ```bash
+    # macOS
+    brew install golangci-lint
+
+    # Linux
+    curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+
+    # Windows (via scoop)
+    scoop install golangci-lint
+    ```
+
+    Install buf for Protocol Buffer generation:
+    ```bash
+    # macOS
+    brew install bufbuild/buf/buf
+
+    # Linux/Windows
+    go install github.com/bufbuild/buf/cmd/buf@latest
+    ```
+
+    Install goimports for formatting:
+    ```bash
+    go install golang.org/x/tools/cmd/goimports@latest
+    ```
+  </Step>
+
+  <Step title="Start the backend server">
+    Run the development server:
+    ```bash
+    go run ./cmd/memos --port 8081
+    ```
+
+    The backend API will be available at `http://localhost:8081`.
+
+    <Tip>Use `--port` flag to run on a different port if 8081 is already in use.</Tip>
+  </Step>
+</Steps>
+
+## Frontend Setup
+
+<Steps>
+  <Step title="Install Node.js and pnpm">
+    Install Node.js 22 or higher from [nodejs.org](https://nodejs.org/).
+
+    Install pnpm globally:
+    ```bash
+    npm install -g pnpm@10
+    ```
+
+    Verify installations:
+    ```bash
+    node --version  # Should be v22 or higher
+    pnpm --version  # Should be 10.x
+    ```
+  </Step>
+
+  <Step title="Install frontend dependencies">
+    Navigate to the web directory:
+    ```bash
+    cd web
+    ```
+
+    Install dependencies:
+    ```bash
+    pnpm install
+    ```
+  </Step>
+
+  <Step title="Start the development server">
+    Start Vite dev server with hot reload:
+    ```bash
+    pnpm dev
+    ```
+
+    The frontend will be available at `http://localhost:5173`.
+
+    <Info>
+      The dev server automatically proxies API requests to `http://localhost:8081`. Make sure the backend is running first.
+    </Info>
+  </Step>
+</Steps>
+
+## Database Setup
+
+Memos supports three database backends: SQLite (default), MySQL, and PostgreSQL.
+
+### SQLite (Default)
+
+No additional setup required. SQLite runs in-memory or uses a local file:
+
+```bash
+go run ./cmd/memos --port 8081
+```
+
+Data is stored in `~/.memos/memos_prod.db`.
+
+### MySQL
+
+<Steps>
+  <Step title="Start MySQL">
+    Using Docker:
+    ```bash
+    docker run -d \
+      --name memos-mysql \
+      -e MYSQL_ROOT_PASSWORD=password \
+      -e MYSQL_DATABASE=memos \
+      -p 3306:3306 \
+      mysql:8
+    ```
+  </Step>
+
+  <Step title="Run with MySQL">
+    ```bash
+    DRIVER=mysql DSN="root:password@tcp(localhost:3306)/memos" go run ./cmd/memos
+    ```
+  </Step>
+</Steps>
+
+### PostgreSQL
+
+<Steps>
+  <Step title="Start PostgreSQL">
+    Using Docker:
+    ```bash
+    docker run -d \
+      --name memos-postgres \
+      -e POSTGRES_PASSWORD=password \
+      -e POSTGRES_DB=memos \
+      -p 5432:5432 \
+      postgres:16
+    ```
+  </Step>
+
+  <Step title="Run with PostgreSQL">
+    ```bash
+    DRIVER=postgres DSN="postgres://postgres:password@localhost:5432/memos?sslmode=disable" go run ./cmd/memos
+    ```
+  </Step>
+</Steps>
+
+## Protocol Buffers Setup
+
+Memos uses Protocol Buffers for API definitions and type-safe communication between frontend and backend.
+
+<Steps>
+  <Step title="Install buf">
+    Already covered in backend setup. Verify:
+    ```bash
+    buf --version
+    ```
+  </Step>
+
+  <Step title="Generate code from .proto files">
+    Navigate to the proto directory:
+    ```bash
+    cd proto
+    ```
+
+    Generate Go and TypeScript code:
+    ```bash
+    buf generate
+    ```
+
+    This creates:
+    - Go code in `proto/gen/api/v1/`
+    - TypeScript code in `web/src/types/proto/api/v1/`
+  </Step>
+
+  <Step title="Lint proto files">
+    ```bash
+    buf lint
+    ```
+  </Step>
+</Steps>
+
+## Verify Your Setup
+
+Run these commands to ensure everything is working:
+
+```bash
+# Backend tests
+go test ./...
+
+# Backend linting
+golangci-lint run
+
+# Frontend type checking
+cd web && pnpm lint
+
+# Frontend build
+pnpm build
+```
+
+## Environment Variables
+
+### Backend Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMOS_PORT` | `8081` | HTTP server port |
+| `MEMOS_ADDR` | `` | Bind address (empty = all interfaces) |
+| `MEMOS_DATA` | `~/.memos` | Data directory for SQLite and assets |
+| `MEMOS_DRIVER` | `sqlite` | Database driver: `sqlite`, `mysql`, `postgres` |
+| `MEMOS_DSN` | `` | Database connection string |
+| `MEMOS_DEMO` | `false` | Enable demo mode with sample data |
+| `MEMOS_INSTANCE_URL` | `` | Instance base URL for webhooks |
+
+### Frontend Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEV_PROXY_SERVER` | `http://localhost:8081` | Backend API proxy target |
+
+<Tip>
+  Create a `.env` file in the root directory to set environment variables during development.
+</Tip>
+
+## IDE Setup
+
+### Visual Studio Code
+
+Recommended extensions:
+
+- **Go** (`golang.go`) - Go language support
+- **Protocol Buffers** (`zxh404.vscode-proto3`) - Proto syntax highlighting
+- **Biome** (`biomejs.biome`) - Frontend linting and formatting
+- **Tailwind CSS IntelliSense** - Tailwind class completions
+
+### GoLand / WebStorm
+
+JetBrains IDEs have built-in support for Go, TypeScript, and Protocol Buffers.
+
+Configure:
+1. Go to **Settings** → **Languages & Frameworks** → **Go**
+2. Set Go SDK to 1.25.7
+3. Enable Go Modules integration
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Port 8081 already in use">
+    Change the backend port:
+    ```bash
+    go run ./cmd/memos --port 8082
+    ```
+
+    Update the frontend proxy target in `web/vite.config.mts` or set:
+    ```bash
+    DEV_PROXY_SERVER=http://localhost:8082 pnpm dev
+    ```
+  </Accordion>
+
+  <Accordion title="pnpm install fails">
+    Clear pnpm cache and retry:
+    ```bash
+    pnpm store prune
+    pnpm install --force
+    ```
+  </Accordion>
+
+  <Accordion title="buf generate fails">
+    Ensure buf is installed and updated:
+    ```bash
+    buf --version
+    # Update if needed
+    go install github.com/bufbuild/buf/cmd/buf@latest
+    ```
+  </Accordion>
+
+  <Accordion title="Go module errors">
+    Clean and re-download modules:
+    ```bash
+    go clean -modcache
+    go mod download
+    go mod tidy
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Building" icon="hammer" href="/development/building">
+    Learn how to build production binaries and Docker images
+  </Card>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Write and run tests for your changes
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/development/contributing">
+    Submit your first pull request
+  </Card>
+</CardGroup>

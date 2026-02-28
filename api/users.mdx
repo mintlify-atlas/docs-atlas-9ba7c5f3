@@ -1,0 +1,598 @@
+---
+title: Users
+description: API endpoints for user management in Memos
+---
+
+## Overview
+
+Users are the people who create and interact with memos. The User API provides endpoints for user management, authentication, settings, and statistics.
+
+## List Users
+
+<Note>
+Retrieves a list of all users. Requires admin privileges.
+</Note>
+
+```bash GET /api/v1/users
+curl https://your-memos-instance.com/api/v1/users \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Query Parameters
+
+<ParamField query="page_size" type="integer">
+  Maximum number of users to return. Default: 50, Maximum: 1000
+</ParamField>
+
+<ParamField query="page_token" type="string">
+  Token for retrieving the next page (from previous response)
+</ParamField>
+
+<ParamField query="filter" type="string">
+  Filter users by criteria. Example: `username == "alice"`
+  
+  Supported operators: `==`
+  
+  Supported fields: `username`
+</ParamField>
+
+<ParamField query="show_deleted" type="boolean">
+  Include deleted users in results. Default: `false`
+</ParamField>
+
+### Response
+
+<ResponseField name="users" type="array">
+  Array of user objects
+</ResponseField>
+
+<ResponseField name="next_page_token" type="string">
+  Token for the next page. Omitted if no more pages.
+</ResponseField>
+
+<ResponseField name="total_size" type="integer">
+  Total count of users (may be approximate)
+</ResponseField>
+
+### Error Responses
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User is not an admin
+</ResponseField>
+
+---
+
+## Get User
+
+<Note>
+Retrieves a single user by ID or username. Supports both numeric IDs and username strings.
+</Note>
+
+```bash GET /api/v1/users/{user}
+curl https://your-memos-instance.com/api/v1/users/alice \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Or by numeric ID
+curl https://your-memos-instance.com/api/v1/users/101 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="user" type="string" required>
+  The user ID (numeric) or username (string). Examples:
+  - `users/101` - Get user by ID
+  - `users/alice` - Get user by username
+</ParamField>
+
+### Response
+
+<ResponseField name="name" type="string">
+  The resource name of the user. Format: `users/{user_id}`
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  The user's role: `ADMIN` or `USER`
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  Unique username for login
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  Email address (may be empty)
+</ResponseField>
+
+<ResponseField name="display_name" type="string">
+  Display name shown in the UI
+</ResponseField>
+
+<ResponseField name="avatar_url" type="string">
+  URL to user's avatar image
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  User bio/description
+</ResponseField>
+
+<ResponseField name="state" type="string">
+  Account state: `NORMAL` or `ARCHIVED`
+</ResponseField>
+
+<ResponseField name="create_time" type="timestamp">
+  Account creation timestamp
+</ResponseField>
+
+<ResponseField name="update_time" type="timestamp">
+  Last update timestamp
+</ResponseField>
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid user name format
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - User does not exist
+</ResponseField>
+
+---
+
+## Create User
+
+<Note>
+Creates a new user account. The first user created automatically becomes an admin. Subsequent users require admin privileges or enabled registration.
+</Note>
+
+```bash POST /api/v1/users
+curl -X POST https://your-memos-instance.com/api/v1/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user": {
+      "username": "alice",
+      "password": "secure_password_123",
+      "email": "alice@example.com",
+      "display_name": "Alice Smith"
+    }
+  }'
+```
+
+### Request Body
+
+<ParamField body="user" type="object" required>
+  The user to create
+  
+  <Expandable title="properties">
+    <ParamField body="username" type="string" required>
+      Unique username (1-32 characters, alphanumeric and hyphens only)
+    </ParamField>
+    
+    <ParamField body="password" type="string" required>
+      User's password (will be hashed before storage)
+    </ParamField>
+    
+    <ParamField body="email" type="string">
+      Email address (optional)
+    </ParamField>
+    
+    <ParamField body="display_name" type="string">
+      Display name for the user (optional)
+    </ParamField>
+    
+    <ParamField body="role" type="string">
+      Role to assign. Only settable by admin users:
+      - `ADMIN` - Full system access
+      - `USER` - Regular user (default)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="user_id" type="string">
+  Optional custom user ID. Must match pattern `[a-z0-9-]+`. If not provided, an ID will be generated.
+</ParamField>
+
+<ParamField body="validate_only" type="boolean">
+  If true, validates the request without creating the user. Default: `false`
+</ParamField>
+
+<ParamField body="request_id" type="string">
+  Idempotency token to ensure multiple requests have the same result
+</ParamField>
+
+### User Creation Rules
+
+1. **First User**: Automatically becomes an admin (no authentication required)
+2. **Admin Users**: Can create users with any role
+3. **Regular Users**: Can only create regular user accounts if registration is enabled
+4. **Disabled Registration**: Non-admin users cannot create accounts
+
+### Response
+
+Returns the created user object (same structure as Get User response).
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid username format or missing required fields
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User registration is disabled
+</ResponseField>
+
+---
+
+## Update User
+
+<Note>
+Updates specific fields of a user account using field masks. Users can update their own accounts; admins can update any account.
+</Note>
+
+```bash PATCH /api/v1/users/{user_id}
+curl -X PATCH https://your-memos-instance.com/api/v1/users/101 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user": {
+      "name": "users/101",
+      "display_name": "Alice Johnson",
+      "email": "alice.johnson@example.com"
+    },
+    "update_mask": {
+      "paths": ["display_name", "email"]
+    }
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="user_id" type="string" required>
+  The ID of the user to update
+</ParamField>
+
+### Request Body
+
+<ParamField body="user" type="object" required>
+  The user object with updated fields. Must include `name` field.
+</ParamField>
+
+<ParamField body="update_mask" type="object" required>
+  Specifies which fields to update.
+  
+  <Expandable title="paths">
+    <ParamField body="paths" type="array" required>
+      Array of field paths: `["username", "email", "display_name", "avatar_url", "description", "password", "role"]`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="allow_missing" type="boolean">
+  If true, allows updating sensitive fields. Default: `false`
+</ParamField>
+
+### Updatable Fields
+
+- `username` - Username (admin only)
+- `email` - Email address
+- `display_name` - Display name
+- `avatar_url` - Avatar URL
+- `description` - User bio
+- `password` - Password (self or admin only)
+- `role` - User role (admin only)
+
+### Response
+
+Returns the updated user object.
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Empty update_mask or invalid field values
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User cannot modify this account
+</ResponseField>
+
+---
+
+## Delete User
+
+<Note>
+Deletes a user account. Requires admin privileges.
+</Note>
+
+```bash DELETE /api/v1/users/{user_id}
+curl -X DELETE https://your-memos-instance.com/api/v1/users/101 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="user_id" type="string" required>
+  The ID of the user to delete
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="force" type="boolean">
+  If true, delete even if user has associated data. Default: `false`
+</ParamField>
+
+### Response
+
+Returns empty response on success.
+
+---
+
+## Get User Statistics
+
+<Note>
+Retrieves statistics for a specific user including memo counts, tags, and activity.
+</Note>
+
+```bash GET /api/v1/users/{user_id}:getStats
+curl https://your-memos-instance.com/api/v1/users/101:getStats \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Response
+
+<ResponseField name="name" type="string">
+  Resource name of the user
+</ResponseField>
+
+<ResponseField name="total_memo_count" type="integer">
+  Total number of memos created by the user
+</ResponseField>
+
+<ResponseField name="memo_display_timestamps" type="array">
+  Array of timestamps when memos were displayed
+</ResponseField>
+
+<ResponseField name="memo_type_stats" type="object">
+  Statistics by memo type:
+  - `link_count` - Memos containing links
+  - `code_count` - Memos containing code
+  - `todo_count` - Memos with task lists
+  - `undo_count` - Memos with completed tasks
+</ResponseField>
+
+<ResponseField name="tag_count" type="object">
+  Map of tag names to usage counts. Example: `{"work": 15, "personal": 42}`
+</ResponseField>
+
+<ResponseField name="pinned_memos" type="array">
+  Array of pinned memo resource names
+</ResponseField>
+
+---
+
+## List All User Statistics
+
+<Note>
+Retrieves statistics for all users. Requires admin privileges.
+</Note>
+
+```bash GET /api/v1/users:stats
+curl https://your-memos-instance.com/api/v1/users:stats \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Response
+
+<ResponseField name="stats" type="array">
+  Array of user statistics objects (same structure as Get User Statistics)
+</ResponseField>
+
+---
+
+## User Settings
+
+### Get User Setting
+
+Retrieves a specific user setting.
+
+```bash GET /api/v1/users/{user_id}/settings/{setting_key}
+curl https://your-memos-instance.com/api/v1/users/101/settings/GENERAL \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**Available Setting Keys:**
+- `GENERAL` - General user preferences (locale, theme, default visibility)
+- `WEBHOOKS` - Webhook configurations
+
+### Update User Setting
+
+```bash PATCH /api/v1/users/{user_id}/settings/{setting_key}
+curl -X PATCH https://your-memos-instance.com/api/v1/users/101/settings/GENERAL \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "users/101/settings/GENERAL",
+      "general_setting": {
+        "locale": "en",
+        "theme": "dark",
+        "memo_visibility": "PRIVATE"
+      }
+    },
+    "update_mask": {
+      "paths": ["general_setting"]
+    }
+  }'
+```
+
+**General Setting Fields:**
+- `locale` - Preferred language code (e.g., `"en"`, `"zh"`, `"fr"`)
+- `theme` - Theme name from `web/public/themes/` directory
+- `memo_visibility` - Default visibility for new memos: `PRIVATE`, `PROTECTED`, or `PUBLIC`
+
+### List User Settings
+
+```bash GET /api/v1/users/{user_id}/settings
+curl https://your-memos-instance.com/api/v1/users/101/settings \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+---
+
+## Personal Access Tokens
+
+### List Personal Access Tokens
+
+Retrieves all Personal Access Tokens for a user.
+
+```bash GET /api/v1/users/{user_id}/personalAccessTokens
+curl https://your-memos-instance.com/api/v1/users/101/personalAccessTokens \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Create Personal Access Token
+
+Creates a new long-lived token for API/script access.
+
+```bash POST /api/v1/users/{user_id}/personalAccessTokens
+curl -X POST https://your-memos-instance.com/api/v1/users/101/personalAccessTokens \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "CI/CD Pipeline Token",
+    "expires_in_days": 90
+  }'
+```
+
+**Request Fields:**
+- `description` - Human-readable description of the token's purpose
+- `expires_in_days` - Expiration in days (0 = never expires)
+
+**Response:**
+```json
+{
+  "personal_access_token": {
+    "name": "users/101/personalAccessTokens/abc123",
+    "description": "CI/CD Pipeline Token",
+    "created_at": "2024-01-15T10:00:00Z",
+    "expires_at": "2024-04-15T10:00:00Z"
+  },
+  "token": "memos_pat_abc123xyz789..."  // Only shown once!
+}
+```
+
+<Warning>
+The `token` value is only returned once during creation. Store it securely - you won't be able to retrieve it again.
+</Warning>
+
+### Delete Personal Access Token
+
+```bash DELETE /api/v1/users/{user_id}/personalAccessTokens/{token_id}
+curl -X DELETE https://your-memos-instance.com/api/v1/users/101/personalAccessTokens/abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+---
+
+## User Webhooks
+
+### List User Webhooks
+
+```bash GET /api/v1/users/{user_id}/webhooks
+curl https://your-memos-instance.com/api/v1/users/101/webhooks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Create User Webhook
+
+```bash POST /api/v1/users/{user_id}/webhooks
+curl -X POST https://your-memos-instance.com/api/v1/users/101/webhooks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "url": "https://example.com/webhook",
+      "display_name": "My Webhook"
+    }
+  }'
+```
+
+### Update User Webhook
+
+```bash PATCH /api/v1/users/{user_id}/webhooks/{webhook_id}
+curl -X PATCH https://your-memos-instance.com/api/v1/users/101/webhooks/xyz789 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "name": "users/101/webhooks/xyz789",
+      "url": "https://new-url.com/webhook"
+    },
+    "update_mask": {
+      "paths": ["url"]
+    }
+  }'
+```
+
+### Delete User Webhook
+
+```bash DELETE /api/v1/users/{user_id}/webhooks/{webhook_id}
+curl -X DELETE https://your-memos-instance.com/api/v1/users/101/webhooks/xyz789 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+---
+
+## User Notifications
+
+### List User Notifications
+
+```bash GET /api/v1/users/{user_id}/notifications
+curl https://your-memos-instance.com/api/v1/users/101/notifications \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**Query Parameters:**
+- `page_size` - Maximum notifications to return
+- `page_token` - Pagination token
+- `filter` - CEL expression to filter notifications
+
+### Update User Notification
+
+Mark a notification as read or archived.
+
+```bash PATCH /api/v1/users/{user_id}/notifications/{notification_id}
+curl -X PATCH https://your-memos-instance.com/api/v1/users/101/notifications/xyz789 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notification": {
+      "name": "users/101/notifications/xyz789",
+      "status": "ARCHIVED"
+    },
+    "update_mask": {
+      "paths": ["status"]
+    }
+  }'
+```
+
+**Notification Status:**
+- `UNREAD` - New notification
+- `ARCHIVED` - Read/dismissed
+
+**Notification Types:**
+- `MEMO_COMMENT` - Someone commented on your memo
+
+### Delete User Notification
+
+```bash DELETE /api/v1/users/{user_id}/notifications/{notification_id}
+curl -X DELETE https://your-memos-instance.com/api/v1/users/101/notifications/xyz789 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```

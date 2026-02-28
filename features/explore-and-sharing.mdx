@@ -1,0 +1,606 @@
+---
+title: Explore and Sharing
+description: Discover public content and share your memos with the world
+---
+
+Memos provides powerful discovery and sharing features to help you explore public content and share your knowledge with others.
+
+## Explore Page
+
+The Explore page is your gateway to discovering public memos across your instance.
+
+### What's in Explore
+
+<CardGroup cols={2}>
+  <Card title="Public Memos" icon="globe">
+    All memos marked as **Public** visibility appear in Explore, accessible without authentication.
+  </Card>
+  
+  <Card title="Protected Memos" icon="shield">
+    If you're logged in, you also see **Protected** memos from other users.
+  </Card>
+</CardGroup>
+
+**Access levels:**
+
+<Tabs>
+  <Tab title="Visitors (Not Logged In)">
+    - See **Public** memos only
+    - Can read full content
+    - Can view attachments
+    - Cannot comment or react
+    - Cannot filter by user preferences
+  </Tab>
+  
+  <Tab title="Authenticated Users">
+    - See **Public** and **Protected** memos
+    - Can comment on memos
+    - Can add reactions
+    - Can use advanced filters
+    - Can follow links to user profiles
+  </Tab>
+</Tabs>
+
+### Navigating Explore
+
+1. Click **Explore** in the sidebar
+2. Browse memos from all users
+3. Memos display with:
+   - Author name and avatar
+   - Visibility indicator
+   - Full content and attachments
+   - Reaction counts
+   - Comment counts
+
+### Filtering Explore
+
+Use the same powerful filters as your personal memos:
+
+```cel
+# Find tutorials
+tag_search == "tutorial" || tag_search == "howto"
+
+# Find code snippets
+property.has_code == true
+
+# Find recent public posts
+visibility == "PUBLIC" && create_time > timestamp("2024-01-01T00:00:00Z")
+
+# Find posts with resources
+property.has_link == true && tag_search == "resources"
+```
+
+<Note>
+Shortcuts are not available in Explore view - they're personal to your Home page.
+</Note>
+
+## Sharing Memos
+
+### Visibility Levels
+
+Control who can see your memos:
+
+<Tabs>
+  <Tab title="Private">
+    **Who can see:** Only you
+    
+    **Use cases:**
+    - Personal notes
+    - Draft content
+    - Sensitive information
+    - Work in progress
+    
+    **Sharing:** Not shareable - changes must be made to visibility first
+  </Tab>
+  
+  <Tab title="Protected">
+    **Who can see:** All authenticated users on your instance
+    
+    **Use cases:**
+    - Team collaboration
+    - Internal knowledge base
+    - Company announcements
+    - Project documentation
+    
+    **Sharing:** Share links with team members (requires login)
+  </Tab>
+  
+  <Tab title="Public">
+    **Who can see:** Everyone, even without an account
+    
+    **Use cases:**
+    - Blog posts
+    - Tutorials
+    - Public announcements
+    - Knowledge sharing
+    
+    **Sharing:** Fully public URLs, shareable anywhere
+  </Tab>
+</Tabs>
+
+### Changing Visibility
+
+<Steps>
+  <Step title="Open Memo">
+    Navigate to the memo you want to share.
+  </Step>
+  
+  <Step title="Click Visibility Icon">
+    Click the visibility icon (lock, shield, or globe) in the memo header.
+  </Step>
+  
+  <Step title="Select New Level">
+    Choose:
+    - **Private** (lock icon)
+    - **Protected** (shield icon)
+    - **Public** (globe icon)
+  </Step>
+  
+  <Step title="Confirm">
+    The change is immediate. Share the link or direct people to Explore.
+  </Step>
+</Steps>
+
+<Warning>
+Making a memo public exposes all its content and attachments to the internet. Review carefully before publishing.
+</Warning>
+
+### Sharing Links
+
+Every memo has a unique URL:
+
+```
+https://your-instance.com/memos/abc-123-xyz
+```
+
+**Direct sharing:**
+
+<Tabs>
+  <Tab title="Copy Link">
+    1. Click the **share icon** on any memo
+    2. Click **Copy Link**
+    3. Share via email, chat, or social media
+  </Tab>
+  
+  <Tab title="Social Media">
+    Share buttons (if configured):
+    - Twitter/X
+    - Facebook
+    - LinkedIn
+    - Reddit
+    
+    Links include:
+    - Memo snippet as preview text
+    - First image as preview image
+    - Author and timestamp metadata
+  </Tab>
+  
+  <Tab title="Embed Code">
+    <Note>
+    Embeddable widgets are planned but not yet available.
+    </Note>
+    
+    For now, share direct links or screenshots.
+  </Tab>
+</Tabs>
+
+## RSS Feeds
+
+Subscribe to memo updates via RSS:
+
+### Instance Feed
+
+All public memos:
+
+```
+https://your-instance.com/explore/rss.xml
+```
+
+Subscribe with any RSS reader (Feedly, Inoreader, etc.)
+
+### User Feed
+
+Specific user's public memos:
+
+```
+https://your-instance.com/u/{username}/rss.xml
+```
+
+**RSS features:**
+- Full memo content in feed
+- Markdown rendered to HTML
+- Includes attachments
+- Updated in real-time
+- Standard RSS 2.0 format
+
+### Using RSS
+
+<CodeGroup>
+```xml RSS Reader
+<!-- Subscribe in your RSS reader -->
+Feed URL: https://memos.example.com/explore/rss.xml
+
+<!-- Feed items include: -->
+- Title (memo snippet)
+- Description (full HTML content)
+- Publication date
+- Author
+- Categories (tags)
+- Link to original memo
+```
+
+```bash Fetch with cURL
+curl https://memos.example.com/explore/rss.xml
+
+# Output: RSS 2.0 XML with memo entries
+```
+
+```python Parse with Python
+import feedparser
+
+feed = feedparser.parse('https://memos.example.com/explore/rss.xml')
+
+for entry in feed.entries:
+    print(f"{entry.title} by {entry.author}")
+    print(entry.description)
+    print(entry.link)
+```
+</CodeGroup>
+
+## User Profiles
+
+Every user has a public profile page:
+
+```
+https://your-instance.com/u/{username}
+```
+
+**Profile displays:**
+- User avatar and display name
+- Bio/description
+- Public and protected memos
+- User statistics (memo count, etc.)
+- RSS feed link
+
+**Customizing your profile:**
+
+1. Go to **Settings**
+2. Update your **Username**
+3. Upload an **Avatar**
+4. Write a **Bio** (supports Markdown)
+5. Save changes
+
+## Discovery Features
+
+### Trending Tags
+
+See popular tags across the instance:
+
+1. Check the **Popular Tags** section (if enabled)
+2. Click any tag to filter Explore
+3. Discover related content
+
+<Note>
+Tag trending analytics are instance-dependent and may not be enabled everywhere.
+</Note>
+
+### Related Memos
+
+Find connected content:
+
+- **Memo Relations**: Explicitly linked memos
+- **Tag Matches**: Memos sharing tags
+- **Reference Links**: Memos linking to each other
+
+### Following Users
+
+<Note>
+User following is planned but not yet implemented. For now, bookmark user profile URLs or subscribe to RSS feeds.
+</Note>
+
+## API Integration
+
+### List Public Memos
+
+<CodeGroup>
+```javascript JavaScript
+const response = await client.listMemos({
+  filter: 'visibility == "PUBLIC"',
+  orderBy: "display_time desc",
+  pageSize: 50,
+});
+
+for (const memo of response.memos) {
+  console.log(`${memo.creator}: ${memo.content}`);
+}
+```
+
+```bash cURL
+curl "https://your-instance.com/api/v1/memos?filter=visibility%3D%3D%22PUBLIC%22" \
+  -H "Accept: application/json"
+
+# No authentication required for public memos
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    "https://your-instance.com/api/v1/memos",
+    params={
+        "filter": 'visibility == "PUBLIC"',
+        "pageSize": 50
+    }
+)
+
+memos = response.json()["memos"]
+for memo in memos:
+    print(f"{memo['creator']}: {memo['content']}")
+```
+</CodeGroup>
+
+### Change Memo Visibility
+
+```javascript
+import { create } from "@bufbuild/protobuf";
+import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
+
+// Make memo public
+await client.updateMemo({
+  memo: {
+    name: "memos/abc-123",
+    visibility: "PUBLIC",
+  },
+  updateMask: create(FieldMaskSchema, {
+    paths: ["visibility"],
+  }),
+});
+```
+
+### Get User's Public Memos
+
+```javascript
+const response = await client.listMemos({
+  filter: 'creator_id == 123 && visibility == "PUBLIC"',
+  orderBy: "display_time desc",
+});
+
+console.log(`${response.memos.length} public memos from user 123`);
+```
+
+## Privacy & Security
+
+### What's Shared
+
+When you make a memo public:
+
+<CardGroup cols={2}>
+  <Card title="Included" icon="check">
+    - Memo content (Markdown)
+    - Attachments and images
+    - Tags
+    - Creation/update timestamps
+    - Your username and avatar
+    - Comments and reactions
+  </Card>
+  
+  <Card title="Not Included" icon="x">
+    - Private metadata
+    - Edit history (not exposed)
+    - IP addresses
+    - Email or personal info
+    - Other private/protected memos
+  </Card>
+</CardGroup>
+
+### Privacy Best Practices
+
+<AccordionGroup>
+  <Accordion title="Review Before Publishing">
+    - Check for sensitive information
+    - Remove personal details
+    - Verify attachments are appropriate
+    - Review embedded links
+  </Accordion>
+  
+  <Accordion title="Attachment Privacy">
+    - Images have EXIF data automatically stripped
+    - File metadata is removed
+    - Check filenames for sensitive info
+    - Compress or redact screenshots
+  </Accordion>
+  
+  <Accordion title="Control Your Data">
+    - Use Private for drafts
+    - Use Protected for internal sharing
+    - Only use Public when ready
+    - You can revert to Private anytime
+  </Accordion>
+  
+  <Accordion title="Instance Settings">
+    Some instances disable public memos entirely:
+    
+    ```yaml
+    memo_related_setting:
+      disallow_public_visibility: true
+    ```
+    
+    Check with your admin if Public is unavailable.
+  </Accordion>
+</AccordionGroup>
+
+## Disabling Public Memos
+
+### Instance-Wide
+
+Admins can disable public visibility:
+
+1. Go to **Admin Settings**
+2. Navigate to **Memo Settings**
+3. Enable **Disable Public Memos**
+4. All existing public memos become protected
+5. Users cannot create new public memos
+
+### Per-User
+
+Users can keep all memos private:
+
+1. Don't create public memos
+2. Set default visibility to Private in settings
+3. Review existing memos and change to Private
+
+## Content Discovery Tips
+
+<AccordionGroup>
+  <Accordion title="Use Descriptive Tags">
+    Help others find your content:
+    
+    ```markdown
+    # How to Deploy with Docker
+    #tutorial #docker #deployment #devops
+    
+    This guide covers deploying applications using Docker containers.
+    ```
+  </Accordion>
+  
+  <Accordion title="Write Clear Summaries">
+    First few lines matter:
+    
+    ```markdown
+    # API Rate Limiting Guide
+    
+    Learn how to implement rate limiting in REST APIs
+    to prevent abuse and ensure fair usage.
+    
+    ## Table of Contents
+    ...
+    ```
+  </Accordion>
+  
+  <Accordion title="Link Related Content">
+    Build a knowledge graph:
+    
+    ```markdown
+    See also:
+    - [Authentication Guide](/memos/auth-guide)
+    - [Security Best Practices](/memos/security)
+    - [API Documentation](/memos/api-docs)
+    ```
+  </Accordion>
+  
+  <Accordion title="Update Regularly">
+    Keep content fresh:
+    - Add "Last updated" timestamps
+    - Revise outdated information
+    - Add new examples
+    - Respond to comments
+  </Accordion>
+</AccordionGroup>
+
+## Use Cases
+
+### Personal Blog
+
+Use Memos as a microblog:
+
+```markdown
+# Launching My New Project!
+#announcement #project #blog
+
+Excited to share my latest project: a task management
+app built with React and Go. Check it out:
+
+[Live Demo](https://demo.example.com)
+[GitHub](https://github.com/user/repo)
+
+## Features
+- Real-time sync
+- Offline support
+- Beautiful UI
+
+Feedback welcome! #buildinpublic
+```
+
+### Knowledge Base
+
+Share expertise with your team:
+
+```markdown
+# Onboarding: Development Environment Setup
+#onboarding #development #tutorial
+
+## Prerequisites
+- Git installed
+- Node.js 18+
+- Docker Desktop
+
+## Steps
+1. Clone repository: `git clone ...`
+2. Install dependencies: `npm install`
+3. Start services: `docker-compose up`
+4. Run dev server: `npm run dev`
+
+## Troubleshooting
+...
+```
+
+### Resource Collection
+
+Curate valuable links:
+
+```markdown
+# Essential React Resources
+#resources #react #learning
+
+## Official Documentation
+- [React Docs](https://react.dev)
+- [React Router](https://reactrouter.com)
+
+## Tutorials
+- [React Tutorial](https://react.dev/learn)
+- [Full Stack Open](https://fullstackopen.com)
+
+## Tools
+- [React DevTools](https://chrome.google.com/webstore/detail/...)
+```
+
+### Community Updates
+
+Share news and updates:
+
+```markdown
+# Weekly Update - Jan 15, 2024
+#update #team #weekly
+
+## This Week
+- ✅ Shipped v2.0 with new features
+- ✅ Fixed critical bug in auth system
+- 🔄 Working on mobile app
+
+## Next Week
+- [ ] Launch marketing campaign
+- [ ] Conduct user interviews
+- [ ] Plan Q2 roadmap
+
+Questions? Ask in comments!
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Memos" icon="pen" href="/features/memos">
+    Learn how to create shareable content
+  </Card>
+  
+  <Card title="Tags & Filters" icon="filter" href="/features/tags-and-filters">
+    Organize content for discovery
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api-reference/memo-service">
+    Programmatic content sharing
+  </Card>
+  
+  <Card title="RSS Feeds" icon="rss" href="/integrations/rss">
+    Set up RSS for content distribution
+  </Card>
+</CardGroup>

@@ -1,0 +1,476 @@
+---
+title: Memos
+description: API endpoints for managing memos (notes) in Memos
+---
+
+## Overview
+
+Memos are the core content type in Memos. They support rich text in Markdown format, attachments, relations, reactions, and comments.
+
+## Create Memo
+
+<Note>
+Creates a new memo. Returns the created memo with server-generated fields like `name`, `creator`, and timestamps.
+</Note>
+
+```bash POST /api/v1/memos
+curl -X POST https://your-memos-instance.com/api/v1/memos \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "My first memo #tag",
+    "visibility": "PRIVATE"
+  }'
+```
+
+### Request Body
+
+<ParamField body="content" type="string" required>
+  The content of the memo in Markdown format. Maximum length is determined by instance settings (default 8192 characters).
+</ParamField>
+
+<ParamField body="visibility" type="string" required>
+  The visibility of the memo. One of:
+  - `PRIVATE` - Only visible to the creator
+  - `PROTECTED` - Visible to authenticated users
+  - `PUBLIC` - Visible to everyone
+</ParamField>
+
+<ParamField body="memo_id" type="string">
+  Optional custom ID for the memo. Must be 1-32 alphanumeric characters and hyphens only. If not provided, a unique ID will be generated.
+</ParamField>
+
+<ParamField body="create_time" type="timestamp">
+  Optional custom creation timestamp. If not provided, server will use current time.
+</ParamField>
+
+<ParamField body="display_time" type="timestamp">
+  Optional display timestamp for the memo. Determines memo ordering in timeline.
+</ParamField>
+
+<ParamField body="pinned" type="boolean">
+  Whether the memo should be pinned to the top of the feed. Default: `false`
+</ParamField>
+
+<ParamField body="location" type="object">
+  Optional location information for the memo.
+  
+  <Expandable title="properties">
+    <ParamField body="placeholder" type="string">
+      A text description of the location (e.g., "Coffee Shop Downtown")
+    </ParamField>
+    <ParamField body="latitude" type="number">
+      Latitude coordinate
+    </ParamField>
+    <ParamField body="longitude" type="number">
+      Longitude coordinate
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="attachments" type="array">
+  Optional array of attachments to associate with the memo. See [Attachments](/api/attachments) for attachment structure.
+</ParamField>
+
+<ParamField body="relations" type="array">
+  Optional array of relations to other memos (references or comments).
+</ParamField>
+
+### Response
+
+<ResponseField name="name" type="string">
+  The resource name of the memo. Format: `memos/{memo_id}`
+</ResponseField>
+
+<ResponseField name="state" type="string">
+  The state of the memo: `NORMAL` or `ARCHIVED`
+</ResponseField>
+
+<ResponseField name="creator" type="string">
+  The resource name of the creator. Format: `users/{user_id}`
+</ResponseField>
+
+<ResponseField name="create_time" type="timestamp">
+  The creation timestamp
+</ResponseField>
+
+<ResponseField name="update_time" type="timestamp">
+  The last update timestamp
+</ResponseField>
+
+<ResponseField name="display_time" type="timestamp">
+  The display timestamp used for sorting
+</ResponseField>
+
+<ResponseField name="content" type="string">
+  The full content of the memo in Markdown
+</ResponseField>
+
+<ResponseField name="visibility" type="string">
+  The visibility level: `PRIVATE`, `PROTECTED`, or `PUBLIC`
+</ResponseField>
+
+<ResponseField name="tags" type="array">
+  Array of tags extracted from the content (e.g., `#tag` becomes `"tag"`)
+</ResponseField>
+
+<ResponseField name="pinned" type="boolean">
+  Whether the memo is pinned
+</ResponseField>
+
+<ResponseField name="snippet" type="string">
+  A plain text snippet of the memo content (first ~200 characters)
+</ResponseField>
+
+<ResponseField name="property" type="object">
+  Computed properties of the memo:
+  - `has_link` - Contains URLs
+  - `has_task_list` - Contains checkboxes
+  - `has_code` - Contains code blocks
+  - `has_incomplete_tasks` - Has unchecked tasks
+</ResponseField>
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument**
+  - Content exceeds maximum length
+  - Invalid memo_id format
+  - Invalid visibility value
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - Public memos disabled in instance settings
+</ResponseField>
+
+<ResponseField name="409" type="error">
+  **Already Exists** - A memo with the specified memo_id already exists
+</ResponseField>
+
+---
+
+## List Memos
+
+<Note>
+Retrieves a paginated list of memos. Supports filtering, sorting, and pagination.
+</Note>
+
+```bash GET /api/v1/memos
+curl "https://your-memos-instance.com/api/v1/memos?page_size=20&filter=creator_id==123" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Query Parameters
+
+<ParamField query="page_size" type="integer">
+  Maximum number of memos to return. Default: 50, Maximum: 1000
+</ParamField>
+
+<ParamField query="page_token" type="string">
+  Token for retrieving the next page of results (from previous response)
+</ParamField>
+
+<ParamField query="state" type="string">
+  Filter by state: `NORMAL` (default) or `ARCHIVED`
+</ParamField>
+
+<ParamField query="order_by" type="string">
+  Sort order. Examples:
+  - `"display_time desc"` (default)
+  - `"create_time asc"`
+  - `"pinned desc, display_time desc"`
+  
+  Supported fields: `pinned`, `display_time`, `create_time`, `update_time`, `name`
+</ParamField>
+
+<ParamField query="filter" type="string">
+  CEL expression to filter memos. Examples:
+  - `creator_id == 123`
+  - `visibility in ["PUBLIC", "PROTECTED"]`
+  - `has_tag("work")`
+  - `create_time > timestamp("2024-01-01T00:00:00Z")`
+</ParamField>
+
+<ParamField query="show_deleted" type="boolean">
+  Include deleted memos in results. Default: `false`
+</ParamField>
+
+### Response
+
+<ResponseField name="memos" type="array">
+  Array of memo objects (same structure as Create Memo response)
+</ResponseField>
+
+<ResponseField name="next_page_token" type="string">
+  Token for retrieving the next page. Omitted if no more pages.
+</ResponseField>
+
+### Visibility Rules
+
+- **Unauthenticated users**: Only see `PUBLIC` memos
+- **Authenticated users**: See their own memos + `PUBLIC` and `PROTECTED` memos from others
+- **Filtering by creator**: When filtering by a different user, only see their `PUBLIC` and `PROTECTED` memos
+
+---
+
+## Get Memo
+
+<Note>
+Retrieves a single memo by its ID.
+</Note>
+
+```bash GET /api/v1/memos/{memo_id}
+curl https://your-memos-instance.com/api/v1/memos/abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="memo_id" type="string" required>
+  The ID of the memo to retrieve
+</ParamField>
+
+### Response
+
+Returns a memo object (same structure as Create Memo response).
+
+### Error Responses
+
+<ResponseField name="404" type="error">
+  **Not Found** - Memo does not exist or user doesn't have permission to view it
+</ResponseField>
+
+---
+
+## Update Memo
+
+<Note>
+Updates specific fields of a memo using field masks.
+</Note>
+
+```bash PATCH /api/v1/memos/{memo_id}
+curl -X PATCH https://your-memos-instance.com/api/v1/memos/abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memo": {
+      "name": "memos/abc123",
+      "content": "Updated content",
+      "pinned": true
+    },
+    "update_mask": {
+      "paths": ["content", "pinned"]
+    }
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="memo_id" type="string" required>
+  The ID of the memo to update
+</ParamField>
+
+### Request Body
+
+<ParamField body="memo" type="object" required>
+  The memo object with updated fields. Must include `name` field.
+</ParamField>
+
+<ParamField body="update_mask" type="object" required>
+  Specifies which fields to update.
+  
+  <Expandable title="paths">
+    <ParamField body="paths" type="array" required>
+      Array of field paths to update: `["content", "visibility", "pinned", "location"]`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Updatable Fields
+
+- `content` - Memo content
+- `visibility` - Visibility level
+- `pinned` - Pin status
+- `location` - Location information
+- `display_time` - Display timestamp
+
+### Response
+
+Returns the updated memo object.
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid update_mask or field values
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User doesn't own the memo
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Memo does not exist
+</ResponseField>
+
+---
+
+## Delete Memo
+
+<Note>
+Deletes a memo. The memo is soft-deleted by default and can be recovered.
+</Note>
+
+```bash DELETE /api/v1/memos/{memo_id}
+curl -X DELETE https://your-memos-instance.com/api/v1/memos/abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="memo_id" type="string" required>
+  The ID of the memo to delete
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="force" type="boolean">
+  If true, permanently delete the memo even if it has associated data. Default: `false`
+</ParamField>
+
+### Response
+
+Returns empty response on success.
+
+---
+
+## Memo Attachments
+
+### Set Memo Attachments
+
+Replaces all attachments for a memo.
+
+```bash PATCH /api/v1/memos/{memo_id}/attachments
+curl -X PATCH https://your-memos-instance.com/api/v1/memos/abc123/attachments \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "attachments": [
+      {"name": "attachments/xyz789"}
+    ]
+  }'
+```
+
+### List Memo Attachments
+
+Retrieve all attachments for a memo.
+
+```bash GET /api/v1/memos/{memo_id}/attachments
+curl https://your-memos-instance.com/api/v1/memos/abc123/attachments \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+---
+
+## Memo Relations
+
+### Set Memo Relations
+
+Set relations between memos (references or comments).
+
+```bash PATCH /api/v1/memos/{memo_id}/relations
+curl -X PATCH https://your-memos-instance.com/api/v1/memos/abc123/relations \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "relations": [
+      {
+        "memo": {"name": "memos/abc123"},
+        "related_memo": {"name": "memos/def456"},
+        "type": "REFERENCE"
+      }
+    ]
+  }'
+```
+
+**Relation Types:**
+- `REFERENCE` - One memo references another
+- `COMMENT` - One memo is a comment on another
+
+### List Memo Relations
+
+```bash GET /api/v1/memos/{memo_id}/relations
+curl https://your-memos-instance.com/api/v1/memos/abc123/relations \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+---
+
+## Comments
+
+### Create Comment
+
+Create a comment on a memo (creates a new memo as a comment).
+
+```bash POST /api/v1/memos/{memo_id}/comments
+curl -X POST https://your-memos-instance.com/api/v1/memos/abc123/comments \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "comment": {
+      "content": "Great memo!"
+    }
+  }'
+```
+
+### List Comments
+
+```bash GET /api/v1/memos/{memo_id}/comments
+curl https://your-memos-instance.com/api/v1/memos/abc123/comments \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**Query Parameters:**
+- `page_size` - Maximum comments to return
+- `page_token` - Pagination token
+- `order_by` - Sort order (e.g., `"create_time asc"`)
+
+---
+
+## Reactions
+
+### List Reactions
+
+```bash GET /api/v1/memos/{memo_id}/reactions
+curl https://your-memos-instance.com/api/v1/memos/abc123/reactions \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Add/Update Reaction
+
+```bash POST /api/v1/memos/{memo_id}/reactions
+curl -X POST https://your-memos-instance.com/api/v1/memos/abc123/reactions \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reaction": {
+      "reaction_type": "👍"
+    }
+  }'
+```
+
+**Supported Reaction Types:** Any emoji string (e.g., `"👍"`, `"❤️"`, `"😄"`)
+
+### Delete Reaction
+
+```bash DELETE /api/v1/memos/{memo_id}/reactions/{reaction_id}
+curl -X DELETE https://your-memos-instance.com/api/v1/memos/abc123/reactions/xyz789 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```

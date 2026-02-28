@@ -1,0 +1,676 @@
+---
+title: 'Testing Guide'
+description: 'Write and run tests for Memos backend and frontend'
+---
+
+This guide covers testing practices for Memos, including unit tests, integration tests, and end-to-end testing strategies.
+
+## Backend Testing
+
+Memos backend uses Go's built-in testing framework with additional libraries for assertions and test containers.
+
+### Running Tests
+
+<CodeGroup>
+```bash All Tests
+go test ./...
+```
+
+```bash Specific Package
+go test ./store/...
+go test ./server/router/api/v1/...
+```
+
+```bash With Coverage
+go test -cover ./...
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+```bash Race Detection
+go test -race ./...
+```
+
+```bash Verbose Output
+go test -v ./store/...
+```
+</CodeGroup>
+
+### Test Structure
+
+Memos uses the standard Go test pattern:
+
+```go
+package test
+
+import (
+    "context"
+    "testing"
+
+    "github.com/stretchr/testify/require"
+    "github.com/usememos/memos/store"
+)
+
+func TestMemoCreation(t *testing.T) {
+    t.Parallel() // Run tests in parallel
+    ctx := context.Background()
+    ts := NewTestingStore(ctx, t)
+    defer ts.Close()
+
+    // Create test user
+    user, err := createTestingHostUser(ctx, ts)
+    require.NoError(t, err)
+
+    // Execute test
+    memo, err := ts.CreateMemo(ctx, &store.Memo{
+        CreatorID:  user.ID,
+        Content:    "test content",
+        Visibility: store.Public,
+    })
+    require.NoError(t, err)
+    require.NotNil(t, memo)
+    require.Equal(t, "test content", memo.Content)
+}
+```
+
+### Testing Utilities
+
+Memos provides test utilities in `store/test/`:
+
+<AccordionGroup>
+  <Accordion title="NewTestingStore()">
+    Creates an isolated test database:
+
+    ```go
+    func TestExample(t *testing.T) {
+        ctx := context.Background()
+        ts := NewTestingStore(ctx, t)
+        defer ts.Close()
+
+        // Each test gets a fresh database
+        // SQLite: temporary file
+        // MySQL/Postgres: new database in shared container
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="createTestingHostUser()">
+    Creates a test admin user:
+
+    ```go
+    user, err := createTestingHostUser(ctx, ts)
+    require.NoError(t, err)
+
+    // Use user.ID for creating memos, etc.
+    ```
+  </Accordion>
+
+  <Accordion title="NewTestingStoreWithDSN()">
+    Creates a store connected to a specific database:
+
+    ```go
+    ts := NewTestingStoreWithDSN(ctx, t, "mysql", dsn)
+    // Useful for migration testing
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Writing Store Tests
+
+Test pattern for store operations:
+
+<Steps>
+  <Step title="Set up test database">
+    ```go
+    func TestMemoUpdate(t *testing.T) {
+        t.Parallel()
+        ctx := context.Background()
+        ts := NewTestingStore(ctx, t)
+        defer ts.Close()
+    ```
+  </Step>
+
+  <Step title="Create test fixtures">
+    ```go
+    user, _ := createTestingHostUser(ctx, ts)
+    memo, _ := ts.CreateMemo(ctx, &store.Memo{
+        CreatorID:  user.ID,
+        Content:    "original",
+        Visibility: store.Public,
+    })
+    ```
+  </Step>
+
+  <Step title="Execute operation">
+    ```go
+    newContent := "updated"
+    err := ts.UpdateMemo(ctx, &store.UpdateMemo{
+        ID:      memo.ID,
+        Content: &newContent,
+    })
+    require.NoError(t, err)
+    ```
+  </Step>
+
+  <Step title="Verify results">
+    ```go
+    updated, err := ts.GetMemo(ctx, &store.FindMemo{ID: &memo.ID})
+    require.NoError(t, err)
+    require.Equal(t, "updated", updated.Content)
+    ```
+  </Step>
+</Steps>
+
+### Testing with Multiple Databases
+
+Run tests against SQLite, MySQL, and PostgreSQL:
+
+<CodeGroup>
+```bash SQLite (default)
+go test ./store/...
+```
+
+```bash MySQL
+DRIVER=mysql go test ./store/...
+```
+
+```bash PostgreSQL
+DRIVER=postgres go test ./store/...
+```
+</CodeGroup>
+
+<Info>
+  MySQL and PostgreSQL tests use [testcontainers-go](https://testcontainers.com/guides/getting-started-with-testcontainers-for-go/) to spin up database containers automatically.
+</Info>
+
+### Testing API Endpoints
+
+Test gRPC/Connect RPC services:
+
+```go
+package v1_test
+
+import (
+    "context"
+    "testing"
+
+    "connectrpc.com/connect"
+    "github.com/stretchr/testify/require"
+
+    apiv1 "github.com/usememos/memos/proto/gen/api/v1"
+)
+
+func TestMemoService_CreateMemo(t *testing.T) {
+    ctx := context.Background()
+    
+    // Setup test server
+    server := newTestServer(t)
+    defer server.Close()
+
+    // Create memo via API
+    req := &apiv1.CreateMemoRequest{
+        Content:    "test memo",
+        Visibility: "PUBLIC",
+    }
+    
+    resp, err := server.MemoService.CreateMemo(ctx, connect.NewRequest(req))
+    require.NoError(t, err)
+    require.NotNil(t, resp.Msg.Memo)
+    require.Equal(t, "test memo", resp.Msg.Memo.Content)
+}
+```
+
+## Frontend Testing
+
+Memos frontend uses TypeScript type checking and linting instead of traditional unit tests.
+
+### Running Frontend Checks
+
+<CodeGroup>
+```bash Type Checking
+cd web
+pnpm lint
+```
+
+```bash Auto-fix Issues
+pnpm lint:fix
+```
+
+```bash Format Code
+pnpm format
+```
+
+```bash Build Test
+pnpm build
+```
+</CodeGroup>
+
+### TypeScript Configuration
+
+Strict type checking ensures code quality:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}
+```
+
+### Biome Linting
+
+Biome (ESLint replacement) catches common errors:
+
+```bash
+# Check for issues
+pnpm lint
+
+# Auto-fix issues
+pnpm lint:fix
+```
+
+Configuration in `web/biome.json`:
+
+```json
+{
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noExplicitAny": "error"
+      }
+    }
+  }
+}
+```
+
+### Manual Testing
+
+Use React Query DevTools for state inspection:
+
+<Steps>
+  <Step title="Start dev server">
+    ```bash
+    cd web
+    pnpm dev
+    ```
+  </Step>
+
+  <Step title="Open DevTools">
+    Click the React Query icon in the bottom-left corner of the browser.
+  </Step>
+
+  <Step title="Inspect queries">
+    - View active queries and their state
+    - Check cache entries and expiration
+    - Manually refetch or invalidate queries
+    - Inspect mutation state
+  </Step>
+</Steps>
+
+## Protocol Buffer Testing
+
+Validate `.proto` files:
+
+<CodeGroup>
+```bash Lint Proto Files
+cd proto
+buf lint
+```
+
+```bash Check Breaking Changes
+buf breaking --against .git#main
+```
+
+```bash Generate and Verify
+buf generate
+git diff --exit-code  # Ensure no uncommitted changes
+```
+</CodeGroup>
+
+## CI/CD Testing
+
+GitHub Actions runs automated tests on every push and pull request.
+
+### Backend Test Workflow
+
+```yaml .github/workflows/backend-tests.yml
+name: Backend Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "**.go"
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.7'
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code
+      - name: Run golangci-lint
+        run: golangci-lint run --timeout=3m
+
+  tests:
+    strategy:
+      matrix:
+        test-group: [store, server, plugin]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./store/...
+```
+
+### Frontend Test Workflow
+
+```yaml .github/workflows/frontend-tests.yml
+name: Frontend Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "web/**"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm lint
+        working-directory: web
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm build
+        working-directory: web
+```
+
+## Test Coverage
+
+### Viewing Coverage Reports
+
+<Steps>
+  <Step title="Generate coverage">
+    ```bash
+    go test -coverprofile=coverage.out ./...
+    ```
+  </Step>
+
+  <Step title="View in terminal">
+    ```bash
+    go tool cover -func=coverage.out
+    ```
+  </Step>
+
+  <Step title="View in browser">
+    ```bash
+    go tool cover -html=coverage.out
+    ```
+  </Step>
+</Steps>
+
+### Coverage Targets
+
+Aim for these coverage levels:
+
+- **Store layer**: >80%
+- **API services**: >70%
+- **Utilities**: >60%
+
+<Warning>
+  Coverage is a metric, not a goal. Focus on testing critical paths and edge cases rather than chasing 100% coverage.
+</Warning>
+
+## Integration Testing
+
+Test full workflows across multiple components:
+
+```go
+func TestMemoWorkflow(t *testing.T) {
+    ctx := context.Background()
+    ts := NewTestingStore(ctx, t)
+    defer ts.Close()
+
+    // 1. Create user
+    user, err := createTestingHostUser(ctx, ts)
+    require.NoError(t, err)
+
+    // 2. Create memo
+    memo, err := ts.CreateMemo(ctx, &store.Memo{
+        CreatorID:  user.ID,
+        Content:    "#tag test memo",
+        Visibility: store.Public,
+    })
+    require.NoError(t, err)
+
+    // 3. Verify memo payload was processed (tags extracted)
+    require.NotNil(t, memo.Payload)
+    require.Contains(t, memo.Payload.Tags, "tag")
+
+    // 4. Filter by tag
+    memos, err := ts.ListMemos(ctx, &store.FindMemo{
+        Filters: []string{`tag in ["tag"]`},
+    })
+    require.NoError(t, err)
+    require.Len(t, memos, 1)
+
+    // 5. Delete memo
+    err = ts.DeleteMemo(ctx, &store.DeleteMemo{ID: memo.ID})
+    require.NoError(t, err)
+
+    // 6. Verify deletion
+    found, err := ts.GetMemo(ctx, &store.FindMemo{ID: &memo.ID})
+    require.NoError(t, err)
+    require.Nil(t, found)
+}
+```
+
+## Performance Testing
+
+### Benchmark Tests
+
+Go supports benchmarking out of the box:
+
+```go
+func BenchmarkMemoCreation(b *testing.B) {
+    ctx := context.Background()
+    ts := NewTestingStore(ctx, &testing.T{})
+    defer ts.Close()
+
+    user, _ := createTestingHostUser(ctx, ts)
+
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        _, _ = ts.CreateMemo(ctx, &store.Memo{
+            CreatorID:  user.ID,
+            Content:    "benchmark memo",
+            Visibility: store.Public,
+        })
+    }
+}
+```
+
+Run benchmarks:
+```bash
+go test -bench=. -benchmem ./store/...
+```
+
+### Load Testing
+
+Use tools like [k6](https://k6.io/) or [hey](https://github.com/rakyll/hey) for HTTP load testing:
+
+```bash
+# Install hey
+go install github.com/rakyll/hey@latest
+
+# Load test memo creation endpoint
+hey -n 1000 -c 10 -m POST \
+  -H "Authorization: Bearer <token>" \
+  -d '{"content":"test"}' \
+  http://localhost:8081/api/v1/memos
+```
+
+## Test Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Parallel Tests" icon="bolt">
+    Use `t.Parallel()` for independent tests:
+    ```go
+    func TestExample(t *testing.T) {
+        t.Parallel()
+        // ...
+    }
+    ```
+  </Card>
+
+  <Card title="Cleanup" icon="broom">
+    Always clean up resources:
+    ```go
+    defer ts.Close()
+    defer server.Stop()
+    ```
+  </Card>
+
+  <Card title="Clear Assertions" icon="check">
+    Use descriptive error messages:
+    ```go
+    require.Equal(t, expected, actual,
+      "memo content should match")
+    ```
+  </Card>
+
+  <Card title="Isolated Tests" icon="vial">
+    Each test should be independent:
+    ```go
+    // Good: fresh database per test
+    ts := NewTestingStore(ctx, t)
+
+    // Bad: shared state
+    var globalDB *sql.DB
+    ```
+  </Card>
+</CardGroup>
+
+## Debugging Tests
+
+### Verbose Output
+
+```bash
+go test -v ./store/...
+```
+
+### Run Specific Test
+
+```bash
+go test -v -run TestMemoCreation ./store/test/
+```
+
+### Debug with Delve
+
+```bash
+# Install delve
+go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Debug test
+dlv test ./store/test -- -test.run TestMemoCreation
+```
+
+### Print Debugging
+
+```go
+func TestExample(t *testing.T) {
+    memo, _ := ts.CreateMemo(ctx, &store.Memo{...})
+    
+    // Use t.Log for test output
+    t.Logf("Created memo: %+v", memo)
+    
+    // Or spew for detailed output
+    spew.Dump(memo)
+}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Tests fail on MySQL/PostgreSQL">
+    Ensure Docker is running for testcontainers:
+
+    ```bash
+    docker ps
+    ```
+
+    If containers fail to start, check Docker Desktop is running.
+  </Accordion>
+
+  <Accordion title="Race detector warnings">
+    Run with race detection to find data races:
+
+    ```bash
+    go test -race ./...
+    ```
+
+    Fix by using proper synchronization (mutexes, channels).
+  </Accordion>
+
+  <Accordion title="Flaky tests">
+    Common causes:
+    - Timing dependencies (use `time.Sleep` sparingly)
+    - Shared state between tests (use `t.Parallel()` and isolation)
+    - External dependencies (mock when possible)
+
+    Fix by ensuring deterministic test execution.
+  </Accordion>
+
+  <Accordion title="Tests timeout">
+    Increase timeout:
+
+    ```bash
+    go test -timeout 10m ./...
+    ```
+
+    Or optimize slow tests by reducing test data size.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Contributing" icon="code-pull-request" href="/development/contributing">
+    Learn how to submit your changes
+  </Card>
+  <Card title="Building" icon="hammer" href="/development/building">
+    Build production binaries
+  </Card>
+</CardGroup>

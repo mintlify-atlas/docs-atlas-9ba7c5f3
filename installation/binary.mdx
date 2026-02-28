@@ -1,0 +1,338 @@
+---
+title: Pre-built Binary Installation
+description: Download and run Memos binaries for Linux, macOS, and Windows
+---
+
+Memos provides pre-built binaries for multiple platforms. This is the simplest installation method if you prefer not to use Docker.
+
+## Supported Platforms
+
+Pre-built binaries are available for:
+
+- **Linux**: amd64, arm64, armv7
+- **macOS**: amd64 (Intel), arm64 (Apple Silicon)
+- **Windows**: amd64
+
+Binaries are built using the workflow in `.github/workflows/build-binaries.yml:106-208`.
+
+## Download
+
+Download the latest release from GitHub:
+
+```bash
+https://github.com/usememos/memos/releases/latest
+```
+
+Binary naming format: `memos_{version}_{os}_{arch}.tar.gz` (or `.zip` for Windows)
+
+Examples:
+- `memos_0.28.1_linux_amd64.tar.gz`
+- `memos_0.28.1_darwin_arm64.tar.gz`
+- `memos_0.28.1_windows_amd64.zip`
+
+## Installation
+
+<CodeGroup>
+
+```bash Linux
+# Download for Linux amd64
+wget https://github.com/usememos/memos/releases/download/v0.28.1/memos_0.28.1_linux_amd64.tar.gz
+
+# Extract
+tar -xzf memos_0.28.1_linux_amd64.tar.gz
+
+# Make executable
+chmod +x memos
+
+# Move to system path (optional)
+sudo mv memos /usr/local/bin/
+```
+
+```bash macOS (Intel)
+# Download for macOS amd64
+curl -LO https://github.com/usememos/memos/releases/download/v0.28.1/memos_0.28.1_darwin_amd64.tar.gz
+
+# Extract
+tar -xzf memos_0.28.1_darwin_amd64.tar.gz
+
+# Make executable
+chmod +x memos
+
+# Move to system path (optional)
+sudo mv memos /usr/local/bin/
+```
+
+```bash macOS (Apple Silicon)
+# Download for macOS arm64
+curl -LO https://github.com/usememos/memos/releases/download/v0.28.1/memos_0.28.1_darwin_arm64.tar.gz
+
+# Extract
+tar -xzf memos_0.28.1_darwin_arm64.tar.gz
+
+# Make executable
+chmod +x memos
+
+# Move to system path (optional)
+sudo mv memos /usr/local/bin/
+```
+
+```powershell Windows
+# Download from browser or use PowerShell
+Invoke-WebRequest -Uri "https://github.com/usememos/memos/releases/download/v0.28.1/memos_0.28.1_windows_amd64.zip" -OutFile "memos.zip"
+
+# Extract
+Expand-Archive -Path memos.zip -DestinationPath .
+
+# Run
+.\memos.exe
+```
+
+</CodeGroup>
+
+## Running Memos
+
+### Quick Start
+
+Run Memos with default settings:
+
+```bash
+./memos
+```
+
+Memos will:
+- Start on port `8081`
+- Store data in `~/.memos`
+- Use SQLite database
+- Print access URL
+
+### With Custom Options
+
+Use command-line flags from `cmd/memos/main.go:95-107`:
+
+```bash
+./memos --port 5230 --data /path/to/data
+```
+
+### Available Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port` | `8081` | HTTP server port |
+| `--addr` | `` | Bind address (empty = all interfaces) |
+| `--data` | `~/.memos` | Data directory path |
+| `--driver` | `sqlite` | Database driver: `sqlite`, `mysql`, `postgres` |
+| `--dsn` | `` | Database connection string |
+| `--instance-url` | `` | Public instance URL |
+| `--demo` | `false` | Enable demo mode |
+| `--unix-sock` | `` | Unix socket path (overrides addr/port) |
+
+### Using Environment Variables
+
+Alternatively, use environment variables with `MEMOS_` prefix:
+
+<CodeGroup>
+
+```bash Linux/macOS
+export MEMOS_PORT=5230
+export MEMOS_DATA=/var/memos
+./memos
+```
+
+```powershell Windows
+$env:MEMOS_PORT="5230"
+$env:MEMOS_DATA="C:\memos-data"
+.\memos.exe
+```
+
+</CodeGroup>
+
+## External Database Configuration
+
+### MySQL
+
+```bash
+./memos \
+  --driver mysql \
+  --dsn "user:password@tcp(localhost:3306)/memos"
+```
+
+### PostgreSQL
+
+```bash
+./memos \
+  --driver postgres \
+  --dsn "postgres://user:password@localhost:5432/memos?sslmode=disable"
+```
+
+## Running as a System Service
+
+### Linux (systemd)
+
+<Steps>
+  <Step title="Create service file">
+    Create `/etc/systemd/system/memos.service`:
+
+    ```ini
+    [Unit]
+    Description=Memos
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=memos
+    WorkingDirectory=/opt/memos
+    ExecStart=/opt/memos/memos --port 5230 --data /var/lib/memos
+    Restart=on-failure
+    RestartSec=5s
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+  </Step>
+
+  <Step title="Create user and directories">
+    ```bash
+    sudo useradd -r -s /bin/false memos
+    sudo mkdir -p /opt/memos /var/lib/memos
+    sudo cp memos /opt/memos/
+    sudo chown -R memos:memos /opt/memos /var/lib/memos
+    ```
+  </Step>
+
+  <Step title="Enable and start service">
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable memos
+    sudo systemctl start memos
+    ```
+  </Step>
+
+  <Step title="Check status">
+    ```bash
+    sudo systemctl status memos
+    sudo journalctl -u memos -f
+    ```
+  </Step>
+</Steps>
+
+### macOS (launchd)
+
+<Steps>
+  <Step title="Create launch agent">
+    Create `~/Library/LaunchAgents/com.usememos.memos.plist`:
+
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.usememos.memos</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/usr/local/bin/memos</string>
+            <string>--port</string>
+            <string>5230</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+        <key>StandardOutPath</key>
+        <string>/tmp/memos.log</string>
+        <key>StandardErrorPath</key>
+        <string>/tmp/memos.err</string>
+    </dict>
+    </plist>
+    ```
+  </Step>
+
+  <Step title="Load and start service">
+    ```bash
+    launchctl load ~/Library/LaunchAgents/com.usememos.memos.plist
+    launchctl start com.usememos.memos
+    ```
+  </Step>
+</Steps>
+
+### Windows (NSSM)
+
+Use [NSSM](https://nssm.cc/) to run Memos as a Windows service:
+
+<Steps>
+  <Step title="Download NSSM">
+    Download from https://nssm.cc/download
+  </Step>
+
+  <Step title="Install service">
+    ```powershell
+    nssm install Memos "C:\memos\memos.exe"
+    nssm set Memos AppParameters "--port 5230 --data C:\memos-data"
+    nssm set Memos AppDirectory "C:\memos"
+    ```
+  </Step>
+
+  <Step title="Start service">
+    ```powershell
+    nssm start Memos
+    ```
+  </Step>
+</Steps>
+
+## Updating Memos
+
+<Steps>
+  <Step title="Download new binary">
+    Download the latest release from GitHub.
+  </Step>
+
+  <Step title="Stop Memos">
+    ```bash
+    # If running in terminal: Ctrl+C
+    # If running as service:
+    sudo systemctl stop memos  # Linux
+    launchctl stop com.usememos.memos  # macOS
+    ```
+  </Step>
+
+  <Step title="Replace binary">
+    ```bash
+    # Backup old binary
+    mv /usr/local/bin/memos /usr/local/bin/memos.backup
+
+    # Install new binary
+    tar -xzf memos_0.28.2_linux_amd64.tar.gz
+    sudo mv memos /usr/local/bin/
+    ```
+  </Step>
+
+  <Step title="Start Memos">
+    ```bash
+    sudo systemctl start memos  # Linux
+    launchctl start com.usememos.memos  # macOS
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+Always backup your data directory before updating, especially when upgrading major versions.
+</Warning>
+
+## Binary Details
+
+Binaries are built with the following settings (`.github/workflows/build-binaries.yml:147-168`):
+
+- **Go version**: 1.25.7
+- **CGO**: Disabled (`CGO_ENABLED=0`)
+- **Build flags**:
+  - `-trimpath` - Remove file system paths
+  - `-ldflags="-s -w -extldflags '-static'"` - Strip symbols, static linking
+  - `-tags netgo,osusergo` - Pure Go networking and user resolution
+
+This produces fully static binaries with no external dependencies.
+
+## Next Steps
+
+- [Build from source](/installation/build-from-source) for custom modifications
+- [Use Docker](/installation/docker) for easier deployment
+- Learn about [configuration options](/configuration/environment-variables)

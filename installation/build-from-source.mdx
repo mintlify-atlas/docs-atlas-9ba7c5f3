@@ -1,0 +1,474 @@
+---
+title: Building from Source
+description: Build Memos from source for development and customization
+---
+
+Building Memos from source gives you full control over the build process and allows for custom modifications.
+
+## Prerequisites
+
+### Required Tools
+
+From `go.mod:3` and `web/package.json:1-11`:
+
+- **Go**: 1.25.7 or later
+- **Node.js**: 22 or later
+- **pnpm**: 10 or later
+- **Git**: For cloning the repository
+
+### System Requirements
+
+- **OS**: Linux, macOS, or Windows
+- **Memory**: 4GB RAM minimum (8GB recommended for building)
+- **Disk**: 2GB free space
+
+## Quick Build
+
+<Steps>
+  <Step title="Clone repository">
+    ```bash
+    git clone https://github.com/usememos/memos.git
+    cd memos
+    ```
+  </Step>
+
+  <Step title="Build frontend">
+    ```bash
+    cd web
+    pnpm install
+    pnpm release
+    cd ..
+    ```
+    
+    This runs `vite build --mode release` and outputs to `server/router/frontend/dist` (`web/package.json:7`).
+  </Step>
+
+  <Step title="Build backend">
+    ```bash
+    ./scripts/build.sh
+    ```
+    
+    Or manually:
+    ```bash
+    go build -o build/memos ./cmd/memos
+    ```
+  </Step>
+
+  <Step title="Run Memos">
+    ```bash
+    ./build/memos
+    ```
+  </Step>
+</Steps>
+
+Memos will start on `http://localhost:8081`.
+
+## Detailed Build Process
+
+### 1. Install Go
+
+<CodeGroup>
+
+```bash Linux
+# Download Go 1.25.7
+wget https://go.dev/dl/go1.25.7.linux-amd64.tar.gz
+
+# Extract
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.25.7.linux-amd64.tar.gz
+
+# Add to PATH
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+
+# Verify
+go version
+```
+
+```bash macOS
+# Using Homebrew
+brew install go@1.25
+
+# Verify
+go version
+```
+
+```powershell Windows
+# Download from https://go.dev/dl/go1.25.7.windows-amd64.msi
+# Run installer
+
+# Verify in PowerShell
+go version
+```
+
+</CodeGroup>
+
+### 2. Install Node.js and pnpm
+
+<CodeGroup>
+
+```bash Linux
+# Using nvm (recommended)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+source ~/.bashrc
+nvm install 22
+nvm use 22
+
+# Install pnpm
+npm install -g pnpm@10
+
+# Verify
+node --version
+pnpm --version
+```
+
+```bash macOS
+# Using Homebrew
+brew install node@22
+brew install pnpm
+
+# Verify
+node --version
+pnpm --version
+```
+
+```powershell Windows
+# Download Node.js from https://nodejs.org/
+# Run installer
+
+# Install pnpm
+npm install -g pnpm@10
+
+# Verify
+node --version
+pnpm --version
+```
+
+</CodeGroup>
+
+### 3. Clone and Build Frontend
+
+```bash
+# Clone repository
+git clone https://github.com/usememos/memos.git
+cd memos
+
+# Install frontend dependencies
+cd web
+pnpm install --frozen-lockfile
+
+# Build for release (outputs to ../server/router/frontend/dist)
+pnpm release
+
+# Return to project root
+cd ..
+```
+
+<Note>
+The `pnpm release` command builds with production optimizations and places files where the Go backend expects them.
+</Note>
+
+### 4. Build Backend
+
+Using the build script (`scripts/build.sh:1-33`):
+
+```bash
+./scripts/build.sh
+```
+
+The script:
+- Detects your OS
+- Creates build directories
+- Sets up Go cache
+- Builds the binary to `./build/memos` (or `memos.exe` on Windows)
+
+### 5. Manual Backend Build
+
+For more control, build manually:
+
+```bash
+go build -o build/memos ./cmd/memos
+```
+
+With optimizations (used in releases, `.github/workflows/build-binaries.yml:147-168`):
+
+```bash
+CGO_ENABLED=0 go build \
+  -trimpath \
+  -ldflags="-s -w -extldflags '-static'" \
+  -tags netgo,osusergo \
+  -o build/memos \
+  ./cmd/memos
+```
+
+Build flags:
+- `CGO_ENABLED=0` - Disable C dependencies (static binary)
+- `-trimpath` - Remove file system paths from binary
+- `-ldflags="-s -w"` - Strip debugging symbols (smaller binary)
+- `-ldflags="-extldflags '-static'"` - Static linking
+- `-tags netgo,osusergo` - Pure Go networking and user resolution
+
+## Development Workflow
+
+### Backend Development
+
+<Steps>
+  <Step title="Run in development mode">
+    ```bash
+    go run ./cmd/memos --port 8081
+    ```
+  </Step>
+
+  <Step title="Enable hot reload (air)">
+    Install [air](https://github.com/air-verse/air):
+    ```bash
+    go install github.com/air-verse/air@latest
+    ```
+    
+    Run with hot reload:
+    ```bash
+    air
+    ```
+  </Step>
+
+  <Step title="Run tests">
+    ```bash
+    # All tests
+    go test ./...
+    
+    # Specific package
+    go test ./store/...
+    
+    # With coverage
+    go test -cover ./...
+    ```
+  </Step>
+</Steps>
+
+### Frontend Development
+
+<Steps>
+  <Step title="Start backend">
+    ```bash
+    go run ./cmd/memos --port 8081
+    ```
+  </Step>
+
+  <Step title="Start frontend dev server">
+    In another terminal:
+    ```bash
+    cd web
+    pnpm dev
+    ```
+    
+    The dev server runs on `http://localhost:5173` and proxies API requests to `http://localhost:8081` (`web/package.json:5`).
+  </Step>
+
+  <Step title="Make changes">
+    Edit files in `web/src/`. Changes are hot-reloaded automatically.
+  </Step>
+
+  <Step title="Lint and format">
+    ```bash
+    # Type check and lint
+    pnpm lint
+    
+    # Auto-fix issues
+    pnpm lint:fix
+    
+    # Format code
+    pnpm format
+    ```
+  </Step>
+</Steps>
+
+### Protocol Buffer Development
+
+If you modify `.proto` files:
+
+<Steps>
+  <Step title="Install buf">
+    ```bash
+    # macOS/Linux
+    brew install bufbuild/buf/buf
+    
+    # Or download from https://github.com/bufbuild/buf/releases
+    ```
+  </Step>
+
+  <Step title="Regenerate code">
+    ```bash
+    cd proto
+    buf generate
+    ```
+    
+    This generates:
+    - Go code in `proto/gen/api/v1/`
+    - TypeScript code in `web/src/types/proto/api/v1/`
+  </Step>
+
+  <Step title="Lint proto files">
+    ```bash
+    cd proto
+    buf lint
+    ```
+  </Step>
+</Steps>
+
+## Cross-Compilation
+
+Build for different platforms from a single machine:
+
+### Linux ARM64 (Raspberry Pi, etc.)
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -o build/memos-linux-arm64 ./cmd/memos
+```
+
+### macOS Apple Silicon
+
+```bash
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
+  go build -o build/memos-darwin-arm64 ./cmd/memos
+```
+
+### Windows
+
+```bash
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+  go build -o build/memos-windows-amd64.exe ./cmd/memos
+```
+
+### All Platforms
+
+Build for multiple platforms (requires frontend built first):
+
+```bash
+#!/bin/bash
+platforms=(
+  "linux/amd64"
+  "linux/arm64"
+  "darwin/amd64"
+  "darwin/arm64"
+  "windows/amd64"
+)
+
+for platform in "${platforms[@]}"; do
+  IFS='/' read -r -a parts <<< "$platform"
+  GOOS="${parts[0]}"
+  GOARCH="${parts[1]}"
+  output="build/memos-${GOOS}-${GOARCH}"
+  
+  if [ "$GOOS" = "windows" ]; then
+    output="${output}.exe"
+  fi
+  
+  echo "Building for $GOOS/$GOARCH..."
+  CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+    go build -trimpath \
+    -ldflags="-s -w -extldflags '-static'" \
+    -tags netgo,osusergo \
+    -o "$output" ./cmd/memos
+done
+
+echo "Build complete!"
+ls -lh build/
+```
+
+## Docker Build
+
+Build your own Docker image using the official Dockerfile (`scripts/Dockerfile:1-57`):
+
+```bash
+# Build for your platform
+docker build -f scripts/Dockerfile -t memos:custom .
+
+# Build for multiple platforms
+docker buildx build \
+  --platform linux/amd64,linux/arm64,linux/arm/v7 \
+  -f scripts/Dockerfile \
+  -t memos:custom \
+  .
+```
+
+The Dockerfile:
+1. Uses multi-stage build
+2. Builds backend with Go 1.25.7
+3. Uses Alpine 3.21 for minimal runtime
+4. Runs as non-root user (UID 10001)
+5. Exposes port 5230
+
+<Warning>
+The Dockerfile expects frontend assets to be pre-built. Run `pnpm release` in the `web/` directory first.
+</Warning>
+
+## Troubleshooting
+
+### Go module issues
+
+```bash
+# Download dependencies
+go mod download
+
+# Verify dependencies
+go mod verify
+
+# Clean cache
+go clean -modcache
+```
+
+### Frontend build issues
+
+```bash
+# Clear pnpm cache
+pnpm store prune
+
+# Reinstall dependencies
+rm -rf node_modules pnpm-lock.yaml
+pnpm install
+```
+
+### Missing frontend assets
+
+If the binary can't find frontend assets:
+
+```bash
+# Ensure frontend is built to the correct location
+cd web
+pnpm release
+ls -la ../server/router/frontend/dist
+```
+
+### Build fails on Windows
+
+Use Git Bash or WSL for shell scripts:
+
+```bash
+# In Git Bash or WSL
+./scripts/build.sh
+```
+
+Or build manually with PowerShell:
+
+```powershell
+go build -o build\memos.exe .\cmd\memos
+```
+
+## CI/CD Integration
+
+Memos uses GitHub Actions for automated builds (`.github/workflows/`):
+
+- `build-binaries.yml` - Multi-platform binary builds
+- `build-stable-image.yml` - Docker images
+- `backend-tests.yml` - Go tests and linting
+- `frontend-tests.yml` - TypeScript checks and build
+
+Refer to these workflows for production build configurations.
+
+## Next Steps
+
+- [Set up development environment](/contributing/development-setup)
+- [Run tests](/contributing/testing)
+- [Submit a pull request](/contributing/pull-requests)
+- Read the [architecture guide](/contributing/architecture)

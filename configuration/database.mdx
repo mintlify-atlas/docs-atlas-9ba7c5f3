@@ -1,0 +1,484 @@
+---
+title: Database Configuration
+description: Setup and configure SQLite, MySQL, and PostgreSQL for Memos
+---
+
+Memos supports three database backends: SQLite, MySQL, and PostgreSQL. All use the same unified driver interface for consistent behavior across platforms.
+
+## Database Drivers
+
+Source: `store/db/db.go:14-32`
+
+```go
+func NewDBDriver(profile *profile.Profile) (store.Driver, error) {
+    switch profile.Driver {
+    case "sqlite":
+        driver, err = sqlite.NewDB(profile)
+    case "mysql":
+        driver, err = mysql.NewDB(profile)
+    case "postgres":
+        driver, err = postgres.NewDB(profile)
+    default:
+        return nil, errors.New("unknown db driver")
+    }
+}
+```
+
+## SQLite (Default)
+
+SQLite is the default database driver, recommended for single-server deployments. It requires no separate database server and stores everything in a single file.
+
+### Configuration
+
+```bash
+export MEMOS_DRIVER=sqlite
+export MEMOS_DATA=/var/lib/memos
+./memos
+```
+
+The database file will be created at `/var/lib/memos/memos_prod.db`.
+
+### Explicit DSN
+
+You can specify a custom database file location:
+
+```bash
+export MEMOS_DRIVER=sqlite
+export MEMOS_DSN=/opt/memos/custom.db
+./memos
+```
+
+### SQLite Configuration Details
+
+Source: `store/db/sqlite/sqlite.go:24-56`
+
+Memos applies these optimizations automatically:
+
+**Pragma Settings:**
+- `foreign_keys=0` - Foreign key constraints disabled
+- `busy_timeout=10000` - 10 second timeout for locked database
+- `journal_mode=WAL` - Write-Ahead Logging for better concurrency
+- `mmap_size=0` - Memory mapping disabled to prevent OOM
+
+```go
+sqliteDB, err := sql.Open("sqlite", 
+    profile.DSN+"?_pragma=foreign_keys(0)&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=mmap_size(0)")
+```
+
+### Docker with SQLite
+
+```yaml
+version: '3'
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    ports:
+      - "5230:5230"
+    environment:
+      MEMOS_PORT: 5230
+      MEMOS_DRIVER: sqlite
+    volumes:
+      - ./memos:/var/opt/memos
+    restart: unless-stopped
+```
+
+### When to Use SQLite
+
+**Recommended for:**
+- Single server deployments
+- Personal use or small teams
+- Simple backup requirements (just copy the `.db` file)
+- Low to medium traffic (< 100 concurrent users)
+
+**Not recommended for:**
+- Multi-server/clustered deployments
+- High concurrency requirements
+- Network file systems (NFS, CIFS)
+
+## MySQL / MariaDB
+
+MySQL and MariaDB are supported for production deployments requiring higher concurrency or existing MySQL infrastructure.
+
+### Connection String Format
+
+```
+[username[:password]@][protocol[(address)]]/dbname[?param1=value1&...&paramN=valueN]
+```
+
+### Basic Configuration
+
+```bash
+export MEMOS_DRIVER=mysql
+export MEMOS_DSN="user:password@tcp(localhost:3306)/memos?parseTime=true&charset=utf8mb4"
+./memos
+```
+
+### Connection String Examples
+
+**Local MySQL:**
+
+```bash
+export MEMOS_DSN="root:password@tcp(127.0.0.1:3306)/memos?parseTime=true&charset=utf8mb4"
+```
+
+**Remote MySQL with SSL:**
+
+```bash
+export MEMOS_DSN="memos_user:secret@tcp(mysql.example.com:3306)/memos?parseTime=true&charset=utf8mb4&tls=true"
+```
+
+**Unix Socket:**
+
+```bash
+export MEMOS_DSN="user:password@unix(/var/run/mysqld/mysqld.sock)/memos?parseTime=true&charset=utf8mb4"
+```
+
+### Database Setup
+
+Create the database and user before running Memos:
+
+```sql
+CREATE DATABASE memos CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'memos'@'%' IDENTIFIED BY 'your-secure-password';
+GRANT ALL PRIVILEGES ON memos.* TO 'memos'@'%';
+FLUSH PRIVILEGES;
+```
+
+### MySQL Driver Details
+
+Source: `store/db/mysql/mysql.go:20-40`
+
+Memos automatically enables `multiStatements=true` for migrations:
+
+```go
+func mergeDSN(baseDSN string) (string, error) {
+    config, err := mysql.ParseDSN(baseDSN)
+    if err != nil {
+        return "", errors.Wrapf(err, "failed to parse DSN: %s", baseDSN)
+    }
+    config.MultiStatements = true
+    return config.FormatDSN(), nil
+}
+```
+
+### Docker Compose with MySQL
+
+```yaml
+version: '3'
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    depends_on:
+      - mysql
+    ports:
+      - "5230:5230"
+    environment:
+      MEMOS_DRIVER: mysql
+      MEMOS_DSN: "memos:memos_password@tcp(mysql:3306)/memos?parseTime=true&charset=utf8mb4"
+      MEMOS_PORT: 5230
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: memos-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: memos
+      MYSQL_USER: memos
+      MYSQL_PASSWORD: memos_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+```
+
+### Recommended MySQL Settings
+
+For optimal performance with Memos:
+
+```ini
+[mysqld]
+character-set-server=utf8mb4
+collation-server=utf8mb4_unicode_ci
+max_connections=200
+innodb_buffer_pool_size=256M
+```
+
+## PostgreSQL
+
+PostgreSQL is supported for deployments requiring advanced database features or existing PostgreSQL infrastructure.
+
+### Connection String Format
+
+```
+postgres://username:password@host:port/database?option1=value1&option2=value2
+```
+
+Or traditional format:
+
+```
+host=localhost port=5432 user=memos password=secret dbname=memos sslmode=disable
+```
+
+### Basic Configuration
+
+```bash
+export MEMOS_DRIVER=postgres
+export MEMOS_DSN="postgres://memos:password@localhost:5432/memos?sslmode=disable"
+./memos
+```
+
+### Connection String Examples
+
+**Local PostgreSQL:**
+
+```bash
+export MEMOS_DSN="postgres://memos:password@localhost:5432/memos?sslmode=disable"
+```
+
+**Remote PostgreSQL with SSL:**
+
+```bash
+export MEMOS_DSN="postgres://memos:password@postgres.example.com:5432/memos?sslmode=require"
+```
+
+**Traditional format:**
+
+```bash
+export MEMOS_DSN="host=localhost port=5432 user=memos password=secret dbname=memos sslmode=disable"
+```
+
+**With connection pooling:**
+
+```bash
+export MEMOS_DSN="postgres://memos:password@localhost:5432/memos?sslmode=disable&pool_max_conns=10"
+```
+
+### Database Setup
+
+Create the database and user before running Memos:
+
+```sql
+CREATE DATABASE memos;
+CREATE USER memos WITH PASSWORD 'your-secure-password';
+GRANT ALL PRIVILEGES ON DATABASE memos TO memos;
+```
+
+For PostgreSQL 15+, also grant schema privileges:
+
+```sql
+\c memos
+GRANT ALL ON SCHEMA public TO memos;
+```
+
+### PostgreSQL Driver Details
+
+Source: `store/db/postgres/postgres.go:21-40`
+
+```go
+func NewDB(profile *profile.Profile) (store.Driver, error) {
+    if profile == nil {
+        return nil, errors.New("profile is nil")
+    }
+    db, err := sql.Open("postgres", profile.DSN)
+    if err != nil {
+        log.Printf("Failed to open database: %s", err)
+        return nil, errors.Wrapf(err, "failed to open database: %s", profile.DSN)
+    }
+    return &DB{db: db, profile: profile}, nil
+}
+```
+
+### Docker Compose with PostgreSQL
+
+```yaml
+version: '3'
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    depends_on:
+      - postgres
+    ports:
+      - "5230:5230"
+    environment:
+      MEMOS_DRIVER: postgres
+      MEMOS_DSN: "postgres://memos:memos_password@postgres:5432/memos?sslmode=disable"
+      MEMOS_PORT: 5230
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: memos-postgres
+    environment:
+      POSTGRES_USER: memos
+      POSTGRES_PASSWORD: memos_password
+      POSTGRES_DB: memos
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+```
+
+## Database Migrations
+
+Memos automatically manages database schema migrations on startup.
+
+Source: `store/migrator.go:21-414`
+
+### Migration Process
+
+1. **Check if database exists**: If not, apply `LATEST.sql` schema
+2. **Verify minimum version**: Reject pre-0.22 installations
+3. **Apply incremental migrations**: Run all pending migrations in a single transaction
+4. **Demo mode**: Seed with sample data if `MEMOS_DEMO=true`
+
+### Schema Version
+
+The current schema version is stored in the `system_setting` table:
+
+```sql
+SELECT value FROM system_setting WHERE name = 'schema_version';
+```
+
+Format: `major.minor.patch` (e.g., `0.28.0`)
+
+### Migration Files
+
+Migration files are embedded in the binary at:
+
+```
+store/migration/
+├── sqlite/
+│   ├── LATEST.sql
+│   └── 0.28/
+│       ├── 1__add_new_table.sql
+│       └── 2__alter_column.sql
+├── mysql/
+│   ├── LATEST.sql
+│   └── 0.28/
+├── postgres/
+    ├── LATEST.sql
+    └── 0.28/
+```
+
+<Warning>
+  Memos does not support downgrades. Always backup your database before upgrading.
+</Warning>
+
+## Database Comparison
+
+| Feature | SQLite | MySQL | PostgreSQL |
+|---------|--------|-------|------------|
+| **Setup Complexity** | None | Medium | Medium |
+| **Concurrent Writes** | Limited | High | High |
+| **Backup** | File copy | mysqldump | pg_dump |
+| **Clustering** | No | Yes | Yes |
+| **Resource Usage** | Low | Medium | Medium |
+| **Max Database Size** | 281 TB | Unlimited | Unlimited |
+| **Production Ready** | Yes (single server) | Yes | Yes |
+
+## Performance Tuning
+
+### SQLite
+
+```bash
+# Already optimized by Memos
+# WAL mode, 10s busy timeout, no mmap
+```
+
+### MySQL
+
+```ini
+[mysqld]
+innodb_buffer_pool_size=1G
+innodb_log_file_size=256M
+max_connections=200
+```
+
+### PostgreSQL
+
+```ini
+shared_buffers=256MB
+effective_cache_size=1GB
+maintenance_work_mem=64MB
+max_connections=200
+```
+
+## Backup Strategies
+
+### SQLite Backup
+
+```bash
+# Stop Memos first
+systemctl stop memos
+
+# Copy database file
+cp /var/lib/memos/memos_prod.db /backup/memos-$(date +%F).db
+
+# Start Memos
+systemctl start memos
+```
+
+Or use SQLite's online backup:
+
+```bash
+sqlite3 /var/lib/memos/memos_prod.db ".backup /backup/memos-$(date +%F).db"
+```
+
+### MySQL Backup
+
+```bash
+mysqldump -u memos -p memos > memos-backup-$(date +%F).sql
+```
+
+### PostgreSQL Backup
+
+```bash
+pg_dump -U memos -h localhost memos > memos-backup-$(date +%F).sql
+```
+
+## Troubleshooting
+
+### Database Connection Failed
+
+```
+failed to create db driver: failed to open db
+```
+
+**Solutions:**
+- Verify DSN format is correct
+- Check database server is running
+- Verify user credentials
+- Check network connectivity (for remote databases)
+- Ensure database exists
+
+### Migration Failed
+
+```
+failed to migrate: ...
+```
+
+**Solutions:**
+- Check database user has sufficient permissions
+- Review migration logs for specific errors
+- Verify database version compatibility
+- Restore from backup if necessary
+
+### SQLite Database Locked
+
+```
+database is locked
+```
+
+**Solutions:**
+- Ensure only one Memos instance is running
+- Check for stale lock files
+- Verify filesystem is not read-only
+- Avoid running on network filesystems (NFS)

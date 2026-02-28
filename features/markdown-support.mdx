@@ -1,0 +1,543 @@
+---
+title: Markdown Support
+description: Complete guide to Markdown formatting in Memos, powered by GitHub Flavored Markdown
+---
+
+Memos supports rich text formatting using Markdown syntax. We use [goldmark](https://github.com/yuin/goldmark) on the backend for metadata extraction and rendering, with full GitHub Flavored Markdown (GFM) support.
+
+## Basic Syntax
+
+### Headings
+
+Create headings with `#` symbols:
+
+```markdown
+# Heading 1
+## Heading 2
+### Heading 3
+#### Heading 4
+##### Heading 5
+###### Heading 6
+```
+
+<Note>
+Headings automatically generate anchor IDs for deep linking within memos.
+</Note>
+
+### Text Formatting
+
+<CodeGroup>
+```markdown Bold
+**This text is bold**
+__This is also bold__
+```
+
+```markdown Italic
+*This text is italic*
+_This is also italic_
+```
+
+```markdown Strikethrough
+~~This text is crossed out~~
+```
+
+```markdown Combined
+**Bold and _italic_ together**
+~~**Bold strikethrough**~~
+```
+</CodeGroup>
+
+### Lists
+
+<Tabs>
+  <Tab title="Unordered Lists">
+    ```markdown
+    - First item
+    - Second item
+      - Nested item
+      - Another nested item
+    - Third item
+    
+    * Asterisks work too
+    + Or plus signs
+    ```
+  </Tab>
+  
+  <Tab title="Ordered Lists">
+    ```markdown
+    1. First item
+    2. Second item
+       1. Nested item
+       2. Another nested item
+    3. Third item
+    ```
+  </Tab>
+  
+  <Tab title="Task Lists">
+    ```markdown
+    - [ ] Unchecked task
+    - [x] Completed task
+    - [ ] Another task
+      - [x] Nested completed task
+    ```
+    
+    Task lists are interactive - click to toggle completion!
+  </Tab>
+</Tabs>
+
+### Links
+
+```markdown
+# Inline links
+[Link text](https://example.com)
+[Link with title](https://example.com "Hover title")
+
+# Automatic links
+https://example.com
+user@example.com
+
+# Internal memo links
+[Related memo](/memos/abc123)
+```
+
+<Note>
+Automatic linking converts URLs and email addresses to clickable links without explicit markdown syntax.
+</Note>
+
+### Images
+
+```markdown
+![Alt text](https://example.com/image.jpg)
+![Image with title](https://example.com/image.jpg "Image title")
+
+# Local attachments
+![Uploaded image](/o/attachments/xyz789)
+```
+
+Images are automatically displayed inline with lazy loading and responsive sizing.
+
+## Code and Syntax
+
+### Inline Code
+
+Wrap code in backticks:
+
+```markdown
+Use `console.log()` to debug JavaScript.
+Run `npm install` to install dependencies.
+```
+
+### Code Blocks
+
+Create fenced code blocks with syntax highlighting:
+
+````markdown
+```javascript
+function greet(name) {
+  console.log(`Hello, ${name}!`);
+}
+
+greet("World");
+```
+
+```python
+def greet(name):
+    print(f"Hello, {name}!")
+
+greet("World")
+```
+
+```bash
+# Install dependencies
+npm install
+
+# Run the development server
+npm run dev
+```
+````
+
+Supported languages include: JavaScript, TypeScript, Python, Go, Rust, Java, C++, SQL, and many more.
+
+## Tables
+
+Create tables with GitHub Flavored Markdown syntax:
+
+```markdown
+| Feature | Supported | Notes |
+|---------|-----------|-------|
+| Headings | ✓ | H1-H6 |
+| Tables | ✓ | GFM style |
+| Code blocks | ✓ | With syntax highlighting |
+| Task lists | ✓ | Interactive checkboxes |
+
+# Alignment
+| Left aligned | Center aligned | Right aligned |
+|:-------------|:--------------:|--------------:|
+| Left | Center | Right |
+| Text | Text | Text |
+```
+
+Result:
+
+| Feature | Supported | Notes |
+|---------|-----------|-------|
+| Headings | ✓ | H1-H6 |
+| Tables | ✓ | GFM style |
+| Code blocks | ✓ | With syntax highlighting |
+| Task lists | ✓ | Interactive checkboxes |
+
+## Blockquotes
+
+```markdown
+> This is a blockquote.
+> It can span multiple lines.
+>
+> And multiple paragraphs.
+
+> Nested quotes
+>> Like this
+>>> And this
+```
+
+## Horizontal Rules
+
+Create dividers with three or more dashes, asterisks, or underscores:
+
+```markdown
+---
+
+***
+
+___
+```
+
+## Custom Extensions
+
+### Tags
+
+Memos includes a custom tag extension for organization:
+
+```markdown
+Working on the #project-alpha feature today.
+This relates to #backend and #api-design.
+
+Meeting scheduled for tomorrow #meeting #team-sync.
+```
+
+Tags:
+- Start with `#` followed by alphanumeric characters
+- Support hyphens, underscores, and Unicode
+- Are automatically extracted and indexed
+- Can include hierarchies: `#work/project/milestone`
+- Are case-sensitive: `#Work` ≠ `#work`
+
+<Note>
+Chinese, Japanese, Korean, and other Unicode characters are fully supported in tags: `#测试` `#日本語` `#한국어`
+</Note>
+
+### Slash Commands
+
+Type `/` in the editor to access quick insertion commands:
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| `/code` | | Insert code block |
+| `/table` | | Insert table template |
+| `/todo` | | Insert task list |
+| `/divider` | | Insert horizontal rule |
+
+## Metadata Extraction
+
+Memos automatically extracts metadata from your Markdown content:
+
+<CardGroup cols={2}>
+  <Card title="Tags" icon="hashtag">
+    All `#tags` are extracted and indexed for filtering and search.
+  </Card>
+  
+  <Card title="Properties" icon="list-checks">
+    Content properties like `has_link`, `has_code`, `has_task_list` are computed.
+  </Card>
+  
+  <Card title="Snippets" icon="text">
+    Plain text summaries are generated for previews and search results.
+  </Card>
+  
+  <Card title="Links" icon="link">
+    External and internal links are tracked for reference graphs.
+  </Card>
+</CardGroup>
+
+### Filtering by Properties
+
+Use extracted properties in filters:
+
+```cel
+# Find memos with code blocks
+property.has_code == true
+
+# Find memos with incomplete tasks
+property.has_incomplete_tasks == true
+
+# Find memos with links
+property.has_link == true
+
+# Combine filters
+property.has_code == true && tag_search == "tutorial"
+```
+
+## Editor Features
+
+### Real-Time Preview
+
+The editor provides instant feedback:
+
+<AccordionGroup>
+  <Accordion title="Syntax Highlighting">
+    Markdown syntax is highlighted as you type for better readability.
+  </Accordion>
+  
+  <Accordion title="Tag Suggestions">
+    Type `#` to see existing tags and autocomplete.
+  </Accordion>
+  
+  <Accordion title="Link Preview">
+    Hover over links to see previews and metadata.
+  </Accordion>
+  
+  <Accordion title="Focus Mode">
+    Toggle distraction-free writing with the focus mode button.
+  </Accordion>
+</AccordionGroup>
+
+### Keyboard Shortcuts
+
+| Action | Shortcut (Mac) | Shortcut (Windows/Linux) |
+|--------|----------------|-------------------------|
+| Save memo | `Cmd + Enter` | `Ctrl + Enter` |
+| Bold text | `Cmd + B` | `Ctrl + B` |
+| Italic text | `Cmd + I` | `Ctrl + I` |
+| Insert link | `Cmd + K` | `Ctrl + K` |
+| Insert code | `Cmd + E` | `Ctrl + E` |
+
+## Rendering Modes
+
+Memos uses different renderers for different contexts:
+
+<Tabs>
+  <Tab title="Frontend (Default)">
+    Uses **markdown-it** for client-side rendering with:
+    - Interactive task checkboxes
+    - Syntax-highlighted code blocks
+    - Lazy-loaded images
+    - Link previews
+  </Tab>
+  
+  <Tab title="Backend (API)">
+    Uses **goldmark** for:
+    - Metadata extraction (tags, properties)
+    - HTML generation (RSS feeds, email)
+    - Snippet generation
+    - Content validation
+  </Tab>
+</Tabs>
+
+## Advanced Examples
+
+### Meeting Notes
+
+```markdown
+# Team Meeting - 2024-01-15
+#meeting #team-sync
+
+## Attendees
+- Alice (Product)
+- Bob (Engineering)
+- Carol (Design)
+
+## Agenda
+1. [ ] Review sprint progress
+2. [ ] Discuss upcoming features
+3. [ ] Plan next quarter
+
+## Notes
+- Completed **80%** of sprint goals
+- New feature: [Dashboard redesign](/memos/dashboard-spec)
+- Q2 planning starts next week
+
+## Action Items
+- [ ] Alice: Update roadmap document
+- [ ] Bob: Review PR #123
+- [x] Carol: Share design mockups
+
+---
+Next meeting: 2024-01-22
+```
+
+### Code Snippet
+
+````markdown
+# Quick Sort Implementation
+#algorithms #python #tutorial
+
+Here's a clean implementation of QuickSort:
+
+```python
+def quicksort(arr):
+    if len(arr) <= 1:
+        return arr
+    
+    pivot = arr[len(arr) // 2]
+    left = [x for x in arr if x < pivot]
+    middle = [x for x in arr if x == pivot]
+    right = [x for x in arr if x > pivot]
+    
+    return quicksort(left) + middle + quicksort(right)
+
+# Example usage
+numbers = [3, 6, 8, 10, 1, 2, 1]
+print(quicksort(numbers))
+# Output: [1, 1, 2, 3, 6, 8, 10]
+```
+
+**Time Complexity**: O(n log n) average, O(n²) worst case
+**Space Complexity**: O(log n)
+
+See also: [Merge Sort](/memos/merge-sort)
+````
+
+### Project Log
+
+```markdown
+# Project Alpha - Progress Update
+#project-alpha #development #progress
+
+## Completed ✓
+- [x] Set up development environment
+- [x] Implement authentication system
+- [x] Design database schema
+
+## In Progress
+- [ ] Build API endpoints (60% complete)
+- [ ] Create admin dashboard (30% complete)
+
+## Blockers
+> **API Rate Limits**: Need to implement caching layer
+> Discussing options with #backend team
+
+## Resources
+- [API Documentation](https://api.example.com/docs)
+- [Design Mockups](/o/attachments/mockups-v2)
+
+| Milestone | Target Date | Status |
+|-----------|-------------|--------|
+| MVP | 2024-02-01 | On track |
+| Beta | 2024-03-15 | On track |
+| Launch | 2024-04-30 | Planning |
+```
+
+## API Integration
+
+Render Markdown to HTML via API:
+
+<CodeGroup>
+```bash cURL
+# Not directly exposed - use memo content field
+curl -X POST https://your-instance.com/api/v1/memos \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memo": {
+      "content": "# Heading\n\nSome **bold** text"
+    }
+  }'
+```
+
+```javascript Extract Tags
+// Tags are automatically extracted in the response
+const memo = await client.createMemo({
+  memo: {
+    content: "Working on #project with #team",
+  },
+});
+
+console.log(memo.tags); // ["project", "team"]
+```
+
+```python Check Properties
+response = requests.get(
+    "https://your-instance.com/api/v1/memos/abc123",
+    headers={"Authorization": "Bearer YOUR_TOKEN"}
+)
+
+memo = response.json()
+print(memo["property"])
+# {
+#   "hasLink": True,
+#   "hasCode": False,
+#   "hasTaskList": True,
+#   "hasIncompleteTasks": False
+# }
+```
+</CodeGroup>
+
+## Limitations
+
+<Warning>
+The following Markdown features are **not** currently supported:
+- Footnotes
+- Definition lists
+- HTML embedded in Markdown
+- LaTeX/Math equations
+- Diagrams (Mermaid, PlantUML)
+</Warning>
+
+For these use cases, consider:
+- Linking to external tools
+- Using code blocks with syntax highlighting
+- Attaching images of diagrams
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Consistent Formatting">
+    - Use headings to structure longer memos
+    - Keep paragraphs short for readability
+    - Use lists instead of long sentences
+    - Add code blocks for commands and snippets
+  </Accordion>
+  
+  <Accordion title="Tag Organization">
+    - Use lowercase for general tags: `#meeting`, `#todo`
+    - Use hierarchies for projects: `#project/alpha/backend`
+    - Be consistent with separators: hyphens OR underscores
+    - Avoid spaces in tags (use `#team-meeting` not `#team meeting`)
+  </Accordion>
+  
+  <Accordion title="Performance">
+    - Avoid excessive nesting (>3 levels)
+    - Keep code blocks under 1000 lines
+    - Optimize large images before uploading
+    - Split very long memos into multiple entries
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Memos" icon="pen" href="/features/memos">
+    Learn how to create and organize memos
+  </Card>
+  
+  <Card title="Attachments" icon="paperclip" href="/features/attachments">
+    Add images and files to your memos
+  </Card>
+  
+  <Card title="Tags & Filters" icon="filter" href="/features/tags-and-filters">
+    Master advanced filtering with tags
+  </Card>
+  
+  <Card title="Editor Reference" icon="keyboard" href="/features/shortcuts">
+    Keyboard shortcuts and productivity tips
+  </Card>
+</CardGroup>

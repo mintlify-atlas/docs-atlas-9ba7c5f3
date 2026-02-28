@@ -1,0 +1,604 @@
+---
+title: Authentication Configuration
+description: Configure OAuth2, SSO, and access tokens for Memos
+---
+
+Memos supports multiple authentication methods: password-based authentication, OAuth2 SSO providers, and Personal Access Tokens (PAT) for API access.
+
+## Authentication Methods
+
+Source: `server/auth/token.go:7-53`
+
+```go
+const (
+    AccessTokenDuration = 15 * time.Minute   // Short-lived JWT tokens
+    RefreshTokenDuration = 30 * 24 * time.Hour  // Long-lived refresh tokens
+    PersonalAccessTokenPrefix = "memos_pat_"    // PAT identifier
+)
+```
+
+### Token Types
+
+1. **Access Tokens** - Short-lived JWT tokens (15 minutes) for API requests
+2. **Refresh Tokens** - Long-lived tokens (30 days) stored in HttpOnly cookies
+3. **Personal Access Tokens (PAT)** - Long-lived tokens for programmatic access
+
+## Password Authentication
+
+Password-based login is enabled by default for all users.
+
+### Disable Password Authentication
+
+Admin users can disable password authentication via the instance settings:
+
+```bash
+curl -X PATCH https://your-instance/api/v1/instance/setting \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "generalSetting": {
+        "disallowPasswordAuth": true
+      }
+    },
+    "updateMask": ["general_setting"]
+  }'
+```
+
+Source: `server/router/api/v1/auth_service.go:86-89`
+
+<Warning>
+  When `disallowPasswordAuth` is enabled, only admin users can still use password login. Regular users must use SSO. Ensure at least one SSO provider is configured before enabling this.
+</Warning>
+
+### Password Requirements
+
+Memos uses bcrypt for password hashing with default cost (10):
+
+```go
+passwordHash, err := bcrypt.GenerateFromPassword(
+    []byte(password), 
+    bcrypt.DefaultCost
+)
+```
+
+Source: `server/router/api/v1/auth_service.go:160-163`
+
+**No enforced password requirements by default.** Consider implementing at application level:
+- Minimum length: 8 characters recommended
+- Complexity: Mixed case, numbers, symbols recommended
+- No password expiration
+
+## OAuth2 / SSO Configuration
+
+Memos supports OAuth2 identity providers for single sign-on.
+
+Source: `proto/store/idp.proto`
+
+### Identity Provider Structure
+
+```protobuf
+message IdentityProvider {
+  int32 id = 1;
+  string name = 2;
+  Type type = 3;  // Currently only OAUTH2
+  string identifier_filter = 4;  // Regex to filter allowed users
+  IdentityProviderConfig config = 5;
+}
+
+message OAuth2Config {
+  string client_id = 1;
+  string client_secret = 2;
+  string auth_url = 3;
+  string token_url = 4;
+  string user_info_url = 5;
+  repeated string scopes = 6;
+  FieldMapping field_mapping = 7;
+}
+
+message FieldMapping {
+  string identifier = 1;   // Username field (e.g. "login", "email")
+  string display_name = 2; // Display name field
+  string email = 3;        // Email field
+  string avatar_url = 4;   // Avatar URL field
+}
+```
+
+### Create OAuth2 Provider
+
+Source: `server/router/api/v1/idp_service.go:16-33`
+
+```bash
+curl -X POST https://your-instance/api/v1/identity-providers \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "identityProvider": {
+      "title": "GitHub OAuth",
+      "type": "OAUTH2",
+      "identifierFilter": "",
+      "config": {
+        "oauth2Config": {
+          "clientId": "your-github-client-id",
+          "clientSecret": "your-github-client-secret",
+          "authUrl": "https://github.com/login/oauth/authorize",
+          "tokenUrl": "https://github.com/login/oauth/access_token",
+          "userInfoUrl": "https://api.github.com/user",
+          "scopes": ["read:user", "user:email"],
+          "fieldMapping": {
+            "identifier": "login",
+            "displayName": "name",
+            "email": "email",
+            "avatarUrl": "avatar_url"
+          }
+        }
+      }
+    }
+  }'
+```
+
+### GitHub OAuth Configuration
+
+1. **Register OAuth App** at https://github.com/settings/developers
+2. **Authorization callback URL:** `https://your-instance.com/auth/callback`
+3. **Configure in Memos:**
+
+```json
+{
+  "title": "GitHub",
+  "type": "OAUTH2",
+  "config": {
+    "oauth2Config": {
+      "clientId": "Iv1.1234567890abcdef",
+      "clientSecret": "1234567890abcdef1234567890abcdef12345678",
+      "authUrl": "https://github.com/login/oauth/authorize",
+      "tokenUrl": "https://github.com/login/oauth/access_token",
+      "userInfoUrl": "https://api.github.com/user",
+      "scopes": ["read:user", "user:email"],
+      "fieldMapping": {
+        "identifier": "login",
+        "displayName": "name",
+        "email": "email",
+        "avatarUrl": "avatar_url"
+      }
+    }
+  }
+}
+```
+
+### Google OAuth Configuration
+
+1. **Create OAuth Client** at https://console.cloud.google.com/apis/credentials
+2. **Authorized redirect URI:** `https://your-instance.com/auth/callback`
+3. **Configure in Memos:**
+
+```json
+{
+  "title": "Google",
+  "type": "OAUTH2",
+  "config": {
+    "oauth2Config": {
+      "clientId": "1234567890-abcdefghijklmnop.apps.googleusercontent.com",
+      "clientSecret": "GOCSPX-abcdefghijklmnopqrst",
+      "authUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "userInfoUrl": "https://www.googleapis.com/oauth2/v2/userinfo",
+      "scopes": ["openid", "profile", "email"],
+      "fieldMapping": {
+        "identifier": "email",
+        "displayName": "name",
+        "email": "email",
+        "avatarUrl": "picture"
+      }
+    }
+  }
+}
+```
+
+### GitLab OAuth Configuration
+
+```json
+{
+  "title": "GitLab",
+  "type": "OAUTH2",
+  "config": {
+    "oauth2Config": {
+      "clientId": "your-gitlab-app-id",
+      "clientSecret": "your-gitlab-secret",
+      "authUrl": "https://gitlab.com/oauth/authorize",
+      "tokenUrl": "https://gitlab.com/oauth/token",
+      "userInfoUrl": "https://gitlab.com/api/v4/user",
+      "scopes": ["read_user"],
+      "fieldMapping": {
+        "identifier": "username",
+        "displayName": "name",
+        "email": "email",
+        "avatarUrl": "avatar_url"
+      }
+    }
+  }
+}
+```
+
+### Microsoft / Azure AD OAuth Configuration
+
+```json
+{
+  "title": "Microsoft",
+  "type": "OAUTH2",
+  "config": {
+    "oauth2Config": {
+      "clientId": "your-azure-client-id",
+      "clientSecret": "your-azure-client-secret",
+      "authUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      "userInfoUrl": "https://graph.microsoft.com/v1.0/me",
+      "scopes": ["openid", "profile", "email"],
+      "fieldMapping": {
+        "identifier": "mail",
+        "displayName": "displayName",
+        "email": "mail",
+        "avatarUrl": ""
+      }
+    }
+  }
+}
+```
+
+### Identifier Filter
+
+Use regex to restrict which users can sign in via SSO:
+
+```json
+{
+  "title": "GitHub (Company Only)",
+  "identifierFilter": "^(alice|bob|charlie)$",
+  "config": { ... }
+}
+```
+
+Or filter by email domain:
+
+```json
+{
+  "identifierFilter": ".*@company\\.com$"
+}
+```
+
+Source: `server/router/api/v1/auth_service.go:120-129`
+
+### PKCE Support
+
+Memos supports OAuth2 PKCE (Proof Key for Code Exchange) for enhanced security:
+
+```go
+token, err := oauth2IdentityProvider.ExchangeToken(
+    ctx, 
+    redirectUri, 
+    authCode, 
+    codeVerifier  // PKCE code verifier
+)
+```
+
+Source: `server/router/api/v1/auth_service.go:110`
+
+### Auto-Registration
+
+When a user signs in via SSO for the first time, Memos automatically creates a new user account:
+
+```go
+userCreate := &store.User{
+    Username: userInfo.Identifier,
+    Role:      store.RoleUser,  // New users are regular users
+    Nickname:  userInfo.DisplayName,
+    Email:     userInfo.Email,
+    AvatarURL: userInfo.AvatarURL,
+}
+```
+
+Source: `server/router/api/v1/auth_service.go:148-155`
+
+To disable auto-registration, set `disallowUserRegistration`:
+
+```bash
+curl -X PATCH https://your-instance/api/v1/instance/setting \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "generalSetting": {
+        "disallowUserRegistration": true
+      }
+    },
+    "updateMask": ["general_setting"]
+  }'
+```
+
+Source: `server/router/api/v1/auth_service.go:143-145`
+
+## Personal Access Tokens (PAT)
+
+PATs are long-lived tokens for API access, useful for automation and integrations.
+
+Source: `server/auth/token.go:189-203`
+
+### PAT Format
+
+```
+memos_pat_{32-character-random-string}
+```
+
+Example: `memos_pat_7x2h9k4p6m8v3n5q1w0r9t8y7u6i5o4p`
+
+### PAT Storage
+
+PATs are stored as SHA-256 hashes in the database:
+
+```go
+func HashPersonalAccessToken(token string) string {
+    hash := sha256.Sum256([]byte(token))
+    return hex.EncodeToString(hash[:])
+}
+```
+
+Source: `server/auth/token.go:200-203`
+
+### Create PAT via API
+
+```bash
+curl -X POST https://your-instance/api/v1/users/me/access_tokens \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "GitHub Actions",
+    "expiresAt": "2025-12-31T23:59:59Z"
+  }'
+```
+
+Response:
+
+```json
+{
+  "accessToken": "memos_pat_7x2h9k4p6m8v3n5q1w0r9t8y7u6i5o4p",
+  "name": "GitHub Actions",
+  "expiresAt": "2025-12-31T23:59:59Z"
+}
+```
+
+<Warning>
+  Save the PAT immediately - it's only shown once. If lost, you must create a new one.
+</Warning>
+
+### Use PAT in API Requests
+
+```bash
+curl -H "Authorization: Bearer memos_pat_7x2h9k4p6m8v3n5q1w0r9t8y7u6i5o4p" \
+  https://your-instance/api/v1/memos
+```
+
+### PAT Authentication Flow
+
+Source: `server/auth/authenticator.go:101-124`
+
+```go
+func (a *Authenticator) AuthenticateByPAT(ctx context.Context, token string) (*store.User, *PAT, error) {
+    // Verify format
+    if !strings.HasPrefix(token, PersonalAccessTokenPrefix) {
+        return nil, nil, errors.New("invalid PAT format")
+    }
+    
+    // Hash and lookup in database
+    tokenHash := HashPersonalAccessToken(token)
+    result, err := a.store.GetUserByPATHash(ctx, tokenHash)
+    
+    // Check expiry
+    if result.PAT.ExpiresAt != nil && result.PAT.ExpiresAt.AsTime().Before(time.Now()) {
+        return nil, nil, errors.New("PAT expired")
+    }
+    
+    // Check user status
+    if result.User.RowStatus == store.Archived {
+        return nil, nil, errors.New("user is archived")
+    }
+    
+    return result.User, result.PAT, nil
+}
+```
+
+### List User's PATs
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  https://your-instance/api/v1/users/me/access_tokens
+```
+
+Response:
+
+```json
+{
+  "accessTokens": [
+    {
+      "name": "GitHub Actions",
+      "tokenId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "expiresAt": "2025-12-31T23:59:59Z",
+      "lastUsedAt": "2024-03-01T12:34:56Z"
+    }
+  ]
+}
+```
+
+### Revoke PAT
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  https://your-instance/api/v1/users/me/access_tokens/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+## Session Management
+
+Memos uses a dual-token system for web sessions:
+
+Source: `server/router/api/v1/auth_service.go:192-238`
+
+### Access Token (JWT)
+
+- **Lifetime:** 15 minutes
+- **Storage:** Client-side (localStorage/memory)
+- **Validation:** Signature-only (stateless)
+- **Claims:** User ID, username, role, status
+
+### Refresh Token (JWT)
+
+- **Lifetime:** 30 days
+- **Storage:** HttpOnly cookie (`memos_refresh`)
+- **Validation:** Database lookup (revocable)
+- **Purpose:** Obtain new access tokens
+
+### Token Rotation
+
+Source: `server/router/api/v1/auth_service.go:288-357`
+
+Memos implements refresh token rotation for security:
+
+1. Client sends expired/near-expired access token
+2. Server validates refresh token from cookie
+3. Server generates NEW refresh token (30-day expiry)
+4. Server revokes OLD refresh token
+5. Server generates NEW access token (15-min expiry)
+6. Client receives fresh tokens
+
+This provides:
+- **Sliding sessions** - Active users stay logged in indefinitely
+- **Security** - Stolen refresh tokens become invalid after legitimate refresh
+
+### Refresh Token Cookie
+
+Source: `server/router/api/v1/auth_service.go:369-401`
+
+```go
+attrs := []string{
+    fmt.Sprintf("%s=%s", auth.RefreshTokenCookieName, refreshToken),
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+}
+
+// Add Secure flag for HTTPS
+if isHTTPS {
+    attrs = append(attrs, "Secure")
+}
+```
+
+**Cookie attributes:**
+- `HttpOnly` - Not accessible via JavaScript (XSS protection)
+- `SameSite=Lax` - CSRF protection
+- `Secure` - Only sent over HTTPS (when origin is HTTPS)
+- `Path=/` - Available to entire application
+
+### Client Device Tracking
+
+Source: `server/router/api/v1/auth_service.go:420-612`
+
+Memos tracks active sessions with device information:
+
+```go
+type ClientInfo struct {
+    UserAgent   string  // Raw user agent string
+    IpAddress   string  // Client IP (from X-Forwarded-For or X-Real-IP)
+    DeviceType  string  // "mobile", "tablet", or "desktop"
+    Os          string  // e.g., "iOS 17.1", "Windows 10/11"
+    Browser     string  // e.g., "Chrome 120.0.0.0"
+}
+```
+
+Parsed from request headers:
+- **User-Agent**: Device detection, OS version, browser version
+- **X-Forwarded-For**: Client IP through proxies
+- **X-Real-IP**: Direct client IP
+
+Users can view and revoke sessions from different devices.
+
+## Security Best Practices
+
+### Access Token Handling
+
+```typescript
+// GOOD: Store in memory or short-lived storage
+const accessToken = response.data.accessToken;
+axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+
+// BAD: Don't store in localStorage (XSS risk)
+localStorage.setItem('accessToken', token); // Vulnerable to XSS
+```
+
+### Refresh Token Security
+
+- Always use HttpOnly cookies (automatic in Memos)
+- Enable HTTPS in production (adds `Secure` flag)
+- Use `SameSite=Lax` or `SameSite=Strict`
+- Implement token rotation (automatic in Memos)
+
+### PAT Security
+
+- Generate unique PAT per integration
+- Set expiration dates
+- Rotate regularly
+- Revoke immediately if compromised
+- Never commit PATs to version control
+
+### OAuth2 Security
+
+- Use HTTPS for all OAuth endpoints
+- Validate redirect URIs strictly
+- Enable PKCE when possible
+- Use short-lived authorization codes
+- Implement state parameter (CSRF protection)
+
+## Troubleshooting
+
+### OAuth Sign-In Failed
+
+```
+failed to exchange token: ...
+```
+
+**Solutions:**
+- Verify OAuth app credentials (client ID/secret)
+- Check redirect URI matches exactly
+- Ensure callback URL is accessible
+- Verify OAuth provider URLs are correct
+- Check network connectivity to OAuth provider
+
+### User Not Allowed (Identifier Filter)
+
+```
+identifier {username} is not allowed
+```
+
+**Solutions:**
+- Check `identifierFilter` regex is correct
+- Test regex: `echo "username" | grep -P "^pattern$"`
+- Ensure identifier matches OAuth field mapping
+- Temporarily remove filter for testing
+
+### PAT Authentication Failed
+
+```
+invalid PAT
+```
+
+**Solutions:**
+- Verify PAT format: `memos_pat_{32-chars}`
+- Check PAT hasn't expired
+- Ensure PAT hasn't been revoked
+- Verify user account is active (not archived)
+
+### Session Expired Immediately
+
+**Solutions:**
+- Check server time is correct (JWT exp validation)
+- Verify cookie domain settings
+- Ensure HTTPS if using `Secure` flag
+- Check browser allows third-party cookies

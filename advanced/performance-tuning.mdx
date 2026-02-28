@@ -1,0 +1,652 @@
+---
+title: Performance Tuning
+description: Optimize Memos for production workloads with database tuning, caching, and infrastructure best practices
+---
+
+## Overview
+
+Memos is designed for efficiency, but production deployments can benefit from tuning based on workload characteristics. This guide covers database optimization, caching strategies, and infrastructure recommendations.
+
+## Performance Architecture
+
+```mermaid
+graph TB
+    Client["Client (Browser)"]
+    CDN["CDN (Static Assets)"]
+    Proxy["Reverse Proxy<br/>(nginx/Caddy)"]
+    Cache["In-Memory Cache<br/>(Go Cache)"]
+    Memos["Memos Server"]
+    DB[("Database<br/>(SQLite/MySQL/PostgreSQL)")]
+    Storage["Object Storage<br/>(S3/Local)"]
+    
+    Client -->|Static Files| CDN
+    Client -->|API Requests| Proxy
+    Proxy -->|HTTP| Memos
+    Memos -->|Cache Hit| Cache
+    Memos -->|Cache Miss| DB
+    Memos -->|Files| Storage
+    
+    style Cache fill:#90EE90
+    style CDN fill:#87CEEB
+    style DB fill:#FFB6C1
+```
+
+## Built-in Caching
+
+Memos implements in-memory caching for frequently accessed data:
+
+### Cache Configuration
+
+```go
+// store/store.go:27-32
+cacheConfig := cache.Config{
+    DefaultTTL:      10 * time.Minute,  // Cache lifetime
+    CleanupInterval: 5 * time.Minute,   // Cleanup frequency
+    MaxItems:        1000,               // Max cached items
+    OnEviction:      nil,                // Eviction callback
+}
+```
+
+### Cached Resources
+
+| Resource | Cache Key | TTL | Purpose |
+|----------|-----------|-----|----------|
+| Instance Settings | `setting_key` | 10 min | Global config (logo, branding) |
+| Users | `user_id` | 10 min | Authentication lookups |
+| User Settings | `user_id-setting_key` | 10 min | User preferences |
+
+See: store/store.go:10-57, store/cache.go:7-9
+
+### Cache Invalidation
+
+Caches are automatically invalidated on:
+- Update operations (UpsertInstanceSetting, UpdateUser, etc.)
+- TTL expiration (10 minutes)
+- Manual eviction (on delete)
+
+**Example** (user cache invalidation):
+```go
+// After updating user
+s.userCache.Delete(user.ID)
+```
+
+### Monitoring Cache Performance
+
+**Future enhancement**: Add cache hit/miss metrics
+
+```go
+// Potential metrics
+var (
+    cacheHits   prometheus.Counter
+    cacheMisses prometheus.Counter
+    cacheSize   prometheus.Gauge
+)
+```
+
+## Database Optimization
+
+### SQLite Tuning
+
+SQLite is Memos' default database and performs well for small-to-medium deployments.
+
+#### Default Configuration
+
+```go
+// store/db/sqlite/sqlite.go:49
+DSN + "?_pragma=foreign_keys(0)" +
+      "&_pragma=busy_timeout(10000)" +
+      "&_pragma=journal_mode(WAL)" +
+      "&_pragma=mmap_size(0)"
+```
+
+**Pragmas Explained**:
+- `foreign_keys(0)`: Disabled for flexibility
+- `busy_timeout(10000)`: Wait up to 10s for locks (prevents "database is locked" errors)
+- `journal_mode(WAL)`: Write-Ahead Logging (better concurrency)
+- `mmap_size(0)`: Disable memory mapping (prevents OOM on some systems)
+
+#### Performance Tuning
+
+For higher write loads, consider:
+
+```sql
+-- Increase cache size (default is small)
+PRAGMA cache_size = -64000;  -- 64MB (negative = KB)
+
+-- Synchronous mode (trade durability for speed)
+PRAGMA synchronous = NORMAL;  -- Default: FULL (safer but slower)
+
+-- Temporary storage (reduce disk I/O)
+PRAGMA temp_store = MEMORY;
+```
+
+**Apply via DSN**:
+```bash
+export MEMOS_DSN="/path/to/memos.db?_pragma=cache_size(-64000)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)"
+```
+
+**WAL Mode Benefits**:
+- **Concurrent reads**: Multiple readers don't block
+- **Better write performance**: Sequential writes to WAL file
+- **Crash safety**: Atomic commits
+
+**WAL Checkpointing**:
+```sql
+-- Manual checkpoint (merge WAL into main DB)
+PRAGMA wal_checkpoint(TRUNCATE);
+
+-- Auto-checkpoint after N pages (default: 1000)
+PRAGMA wal_autocheckpoint = 1000;
+```
+
+#### SQLite Limitations
+
+| Metric | Recommendation |
+|--------|----------------|
+| Max DB Size | 281 TB (theoretical), 100GB (practical) |
+| Concurrent Writers | 1 (serialized by WAL) |
+| Concurrent Readers | Unlimited |
+| Ideal Workload | Read-heavy, single-server |
+
+**When to switch to MySQL/PostgreSQL**:
+- \> 100GB database size
+- High concurrent writes (multiple Memos instances)
+- Need for replication/clustering
+
+### MySQL Tuning
+
+#### Connection Settings
+
+```bash
+export MEMOS_DSN="memos_user:password@tcp(localhost:3306)/memos_db?charset=utf8mb4&parseTime=True&loc=Local&maxAllowedPacket=0"
+```
+
+#### my.cnf Configuration
+
+```ini
+[mysqld]
+# InnoDB buffer pool (50-70% of RAM for dedicated DB server)
+innodb_buffer_pool_size = 2G
+
+# Log file size (larger = better write performance)
+innodb_log_file_size = 256M
+
+# Flush method (O_DIRECT avoids double buffering)
+innodb_flush_method = O_DIRECT
+
+# Connection limits
+max_connections = 200
+
+# Query cache (disabled in MySQL 8.0+)
+# query_cache_type = 0
+
+# Character set
+character_set_server = utf8mb4
+collation_server = utf8mb4_unicode_ci
+
+# Slow query log (for debugging)
+slow_query_log = 1
+long_query_time = 2
+slow_query_log_file = /var/log/mysql/slow.log
+```
+
+#### Indexes
+
+Memos creates indexes automatically via migrations. Verify with:
+
+```sql
+-- Show indexes on memo table
+SHOW INDEX FROM memo;
+
+-- Analyze query performance
+EXPLAIN SELECT * FROM memo WHERE creator_id = 1 ORDER BY created_ts DESC LIMIT 10;
+```
+
+**Key indexes** (from schema):
+- `memo.creator_id` - Fast lookups by user
+- `memo.created_ts` - Chronological sorting
+- `memo.uid` - Unique memo identifier
+- `memo_relation.memo_id` - Relation queries
+
+### PostgreSQL Tuning
+
+#### Connection Settings
+
+```bash
+export MEMOS_DSN="postgres://memos_user:password@localhost:5432/memos_db?sslmode=disable"
+```
+
+#### postgresql.conf Configuration
+
+```ini
+# Memory settings
+shared_buffers = 2GB                # 25% of RAM for dedicated DB server
+effective_cache_size = 6GB          # 50-75% of RAM
+work_mem = 16MB                     # Per-operation memory
+maintenance_work_mem = 512MB        # For VACUUM, CREATE INDEX
+
+# WAL settings
+wal_buffers = 16MB
+min_wal_size = 1GB
+max_wal_size = 4GB
+
+# Query planner
+random_page_cost = 1.1              # SSD: 1.1, HDD: 4.0
+effective_io_concurrency = 200      # SSD: 200, HDD: 2
+
+# Connections
+max_connections = 200
+
+# Logging (for debugging)
+log_min_duration_statement = 1000   # Log queries > 1s
+log_line_prefix = '%t [%p]: user=%u,db=%d,app=%a,client=%h '
+```
+
+#### Vacuum and Analyze
+
+```sql
+-- Auto-vacuum (enabled by default)
+SHOW autovacuum;  -- Should be 'on'
+
+-- Manual vacuum (during low traffic)
+VACUUM ANALYZE;
+
+-- Aggressive vacuum (reclaim space)
+VACUUM FULL ANALYZE memo;
+```
+
+#### Connection Pooling
+
+Use PgBouncer for connection pooling:
+
+```ini
+# pgbouncer.ini
+[databases]
+memos_db = host=localhost port=5432 dbname=memos_db
+
+[pgbouncer]
+listen_addr = 127.0.0.1
+listen_port = 6432
+auth_file = /etc/pgbouncer/userlist.txt
+pool_mode = transaction
+max_client_conn = 1000
+default_pool_size = 20
+```
+
+```bash
+# Update Memos DSN to use PgBouncer
+export MEMOS_DSN="postgres://memos_user:password@localhost:6432/memos_db?sslmode=disable"
+```
+
+## Query Optimization
+
+### Pagination Best Practices
+
+Memos uses `LIMIT`/`OFFSET` for pagination:
+
+```go
+// store/memo.go:74-77
+type FindMemo struct {
+    Limit  *int
+    Offset *int
+    // ...
+}
+```
+
+**Efficient pagination** (for large offsets):
+```sql
+-- Instead of:
+SELECT * FROM memo ORDER BY id DESC LIMIT 10 OFFSET 10000;  -- Slow
+
+-- Use keyset pagination:
+SELECT * FROM memo WHERE id < 12345 ORDER BY id DESC LIMIT 10;  -- Fast
+```
+
+**Future enhancement**: Implement cursor-based pagination in API.
+
+### Filtering Performance
+
+Memos supports advanced filters:
+
+```go
+// store/memo.go:69-72
+type FindMemo struct {
+    VisibilityList  []Visibility
+    ExcludeContent  bool
+    Filters         []string  // Tag search, has_link, etc.
+}
+```
+
+**Optimization tips**:
+- Use `ExcludeContent: true` when content not needed (reduces payload size)
+- Limit `VisibilityList` to only necessary values
+- Add indexes on frequently filtered columns
+
+## Frontend Performance
+
+### React Query Optimization
+
+```typescript
+// web/src/lib/query-client.ts
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,        // Consider stale after 30s
+      gcTime: 5 * 60 * 1000,    // Garbage collect after 5min
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    },
+  },
+});
+```
+
+**Tuning recommendations**:
+- Increase `staleTime` for static data (reduce API calls)
+- Decrease `staleTime` for real-time data
+- Set `refetchOnWindowFocus: false` for low-priority data
+
+### Code Splitting
+
+Memos uses manual chunks for large dependencies:
+
+```typescript
+// vite.config.mts (example)
+build: {
+  rollupOptions: {
+    output: {
+      manualChunks: {
+        'utils-vendor': ['lodash', 'dayjs'],
+        'mermaid-vendor': ['mermaid'],
+        'leaflet-vendor': ['leaflet'],
+      },
+    },
+  },
+},
+```
+
+See: AGENTS.md:559
+
+### Lazy Loading
+
+Load heavy components on demand:
+
+```typescript
+import { lazy, Suspense } from 'react';
+
+const MermaidDiagram = lazy(() => import('./MermaidDiagram'));
+
+function Memo() {
+  return (
+    <Suspense fallback={<Skeleton />}>
+      <MermaidDiagram code={mermaidCode} />
+    </Suspense>
+  );
+}
+```
+
+## Infrastructure Optimization
+
+### Reverse Proxy Caching
+
+#### Nginx Caching
+
+```nginx
+proxy_cache_path /var/cache/nginx/memos levels=1:2 keys_zone=memos_cache:10m max_size=1g inactive=60m;
+
+server {
+    location /api/v1/memos {
+        proxy_pass http://localhost:8081;
+        
+        # Cache GET requests
+        proxy_cache memos_cache;
+        proxy_cache_methods GET HEAD;
+        proxy_cache_valid 200 5m;
+        proxy_cache_key "$scheme$request_method$host$request_uri";
+        proxy_cache_bypass $http_cache_control;
+        
+        add_header X-Cache-Status $upstream_cache_status;
+    }
+    
+    # Don't cache mutations
+    location ~ ^/api/v1/(memos|users) {
+        if ($request_method !~ ^(GET|HEAD)$) {
+            proxy_no_cache 1;
+        }
+    }
+}
+```
+
+#### Static Asset Caching
+
+```nginx
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    access_log off;
+}
+```
+
+### CDN Integration
+
+Offload static assets to CDN:
+
+**Cloudflare**:
+1. Add domain to Cloudflare
+2. Enable caching:
+   - Cache Level: Standard
+   - Browser Cache TTL: 4 hours
+3. Page Rules:
+   - `*memos.example.com/assets/*` → Cache Level: Cache Everything, Edge TTL: 1 month
+
+**AWS CloudFront**:
+```bash
+# Upload frontend assets to S3
+aws s3 sync web/dist s3://memos-static/
+
+# Create CloudFront distribution
+aws cloudfront create-distribution --origin-domain-name memos-static.s3.amazonaws.com
+```
+
+### Load Balancing
+
+For high availability, run multiple Memos instances:
+
+```nginx
+upstream memos_backend {
+    least_conn;  # Or: ip_hash, round_robin
+    server 10.0.1.10:8081 max_fails=3 fail_timeout=30s;
+    server 10.0.1.11:8081 max_fails=3 fail_timeout=30s;
+    server 10.0.1.12:8081 max_fails=3 fail_timeout=30s;
+}
+
+server {
+    location / {
+        proxy_pass http://memos_backend;
+        
+        # Connection pooling
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        
+        # Health check (requires nginx-plus or use separate script)
+        # health_check interval=10 fails=3 passes=2;
+    }
+}
+```
+
+**Important**: Memos currently uses local SQLite by default. For load balancing, use MySQL or PostgreSQL.
+
+## Monitoring and Profiling
+
+### Application Metrics
+
+**Future enhancement**: Expose Prometheus metrics
+
+```go
+// Potential metrics endpoint
+func (s *Server) RegisterMetrics() {
+    prometheus.MustRegister(httpRequestsTotal)
+    prometheus.MustRegister(dbQueryDuration)
+    prometheus.MustRegister(cacheHitRate)
+    
+    http.Handle("/metrics", promhttp.Handler())
+}
+```
+
+### Database Monitoring
+
+#### SQLite
+
+```bash
+# Check database size
+du -h ~/.memos/memos_prod.db
+
+# Check WAL size
+du -h ~/.memos/memos_prod.db-wal
+
+# Run integrity check
+sqlite3 ~/.memos/memos_prod.db "PRAGMA integrity_check;"
+
+# Analyze query performance
+sqlite3 ~/.memos/memos_prod.db "EXPLAIN QUERY PLAN SELECT * FROM memo WHERE creator_id = 1;"
+```
+
+#### MySQL
+
+```sql
+-- Show processlist
+SHOW FULL PROCESSLIST;
+
+-- Slow queries
+SELECT * FROM mysql.slow_log ORDER BY query_time DESC LIMIT 10;
+
+-- InnoDB status
+SHOW ENGINE INNODB STATUS;
+
+-- Table sizes
+SELECT table_name, ROUND((data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)'
+FROM information_schema.tables
+WHERE table_schema = 'memos_db'
+ORDER BY (data_length + index_length) DESC;
+```
+
+#### PostgreSQL
+
+```sql
+-- Active queries
+SELECT pid, query_start, state, query
+FROM pg_stat_activity
+WHERE state != 'idle'
+ORDER BY query_start;
+
+-- Slow queries (requires pg_stat_statements)
+SELECT query, calls, total_time, mean_time
+FROM pg_stat_statements
+ORDER BY mean_time DESC
+LIMIT 10;
+
+-- Table sizes
+SELECT tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
+FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+
+-- Index usage
+SELECT schemaname, tablename, indexname, idx_scan
+FROM pg_stat_user_indexes
+ORDER BY idx_scan;
+```
+
+### System Monitoring
+
+```bash
+# CPU and memory usage
+top -p $(pgrep memos)
+
+# I/O statistics
+iostat -x 5
+
+# Network statistics
+netstat -an | grep :8081
+
+# Open files (check file descriptor limit)
+lsof -p $(pgrep memos) | wc -l
+```
+
+## Resource Recommendations
+
+### Small Deployment (< 10 users)
+
+- **CPU**: 1 core
+- **RAM**: 512MB
+- **Storage**: 10GB SSD
+- **Database**: SQLite
+- **Example**: Personal VPS, Raspberry Pi
+
+### Medium Deployment (10-100 users)
+
+- **CPU**: 2 cores
+- **RAM**: 2GB
+- **Storage**: 50GB SSD
+- **Database**: SQLite or MySQL
+- **Example**: Small team, DigitalOcean Droplet
+
+### Large Deployment (100-1000 users)
+
+- **CPU**: 4-8 cores
+- **RAM**: 8-16GB
+- **Storage**: 200GB SSD
+- **Database**: MySQL or PostgreSQL (dedicated server)
+- **Load Balancer**: 2+ Memos instances
+- **Example**: Enterprise, AWS EC2
+
+### Container Resource Limits
+
+```yaml
+# docker-compose.yml
+services:
+  memos:
+    image: neosmemo/memos:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+```
+
+## Performance Checklist
+
+- [ ] Enable WAL mode for SQLite (enabled by default)
+- [ ] Configure database cache size (SQLite: cache_size, MySQL: innodb_buffer_pool_size, PostgreSQL: shared_buffers)
+- [ ] Add indexes on frequently queried columns
+- [ ] Use reverse proxy caching (nginx/Caddy)
+- [ ] Enable compression (gzip/brotli)
+- [ ] Offload static assets to CDN
+- [ ] Implement connection pooling (PostgreSQL: PgBouncer)
+- [ ] Monitor slow queries (database logs)
+- [ ] Regular VACUUM/ANALYZE (PostgreSQL)
+- [ ] Use pagination for large result sets
+- [ ] Optimize React Query staleTime
+- [ ] Enable lazy loading for heavy components
+- [ ] Set appropriate cache TTLs
+- [ ] Monitor resource usage (CPU, RAM, disk I/O)
+- [ ] Implement health checks
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="sitemap" href="/advanced/architecture">
+    Understand Memos system architecture
+  </Card>
+  <Card title="Backup & Restore" icon="database" href="/advanced/backup-and-restore">
+    Backup strategies for disaster recovery
+  </Card>
+  <Card title="Security" icon="shield" href="/advanced/security">
+    Security best practices and hardening
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/self-hosting/monitoring">
+    Set up monitoring and alerting
+  </Card>
+</CardGroup>

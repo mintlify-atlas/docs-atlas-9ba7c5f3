@@ -1,0 +1,477 @@
+---
+title: Backup and Restore
+description: Strategies for backing up and restoring Memos data across different database engines
+---
+
+## Overview
+
+Memos supports three database backends (SQLite, MySQL, PostgreSQL), each requiring different backup strategies. This guide covers best practices for backing up your data and restoring it when needed.
+
+## Database Location
+
+By default, Memos stores data in:
+
+```bash
+~/.memos/          # Default data directory
+├── memos_prod.db  # SQLite database (default)
+└── assets/        # Uploaded files (attachments, avatars)
+```
+
+You can customize this location with:
+
+```bash
+export MEMOS_DATA=/path/to/data
+# or
+./memos --data /path/to/data
+```
+
+## SQLite Backup
+
+SQLite is the default database and the simplest to backup.
+
+### Method 1: File Copy (Offline)
+
+The safest method is to stop Memos and copy the database file:
+
+```bash
+# Stop Memos
+sudo systemctl stop memos
+
+# Backup database and assets
+tar -czf memos-backup-$(date +%Y%m%d).tar.gz -C ~/.memos .
+
+# Or copy individually
+cp ~/.memos/memos_prod.db ~/.memos/memos_prod.db.backup
+cp -r ~/.memos/assets ~/.memos/assets.backup
+
+# Restart Memos
+sudo systemctl start memos
+```
+
+### Method 2: SQLite Online Backup (Recommended)
+
+Use SQLite's `.backup` command while Memos is running:
+
+```bash
+sqlite3 ~/.memos/memos_prod.db ".backup ~/.memos/memos_backup.db"
+```
+
+This method:
+- Works while Memos is running
+- Creates a consistent snapshot
+- Handles WAL mode correctly
+
+### Method 3: Automated Backup Script
+
+Create a backup script for regular backups:
+
+```bash
+#!/bin/bash
+# File: /usr/local/bin/backup-memos.sh
+
+set -e
+
+BACKUP_DIR="/var/backups/memos"
+DATE=$(date +%Y%m%d-%H%M%S)
+MEMOS_DATA="${MEMOS_DATA:-$HOME/.memos}"
+
+mkdir -p "$BACKUP_DIR"
+
+# Backup SQLite database
+sqlite3 "$MEMOS_DATA/memos_prod.db" ".backup $BACKUP_DIR/memos-$DATE.db"
+
+# Backup assets
+tar -czf "$BACKUP_DIR/assets-$DATE.tar.gz" -C "$MEMOS_DATA" assets
+
+# Keep only last 7 days of backups
+find "$BACKUP_DIR" -name "memos-*.db" -mtime +7 -delete
+find "$BACKUP_DIR" -name "assets-*.tar.gz" -mtime +7 -delete
+
+echo "Backup completed: $DATE"
+```
+
+Make it executable and add to cron:
+
+```bash
+chmod +x /usr/local/bin/backup-memos.sh
+
+# Run daily at 2 AM
+crontab -e
+0 2 * * * /usr/local/bin/backup-memos.sh >> /var/log/memos-backup.log 2>&1
+```
+
+### SQLite Restore
+
+```bash
+# Stop Memos
+sudo systemctl stop memos
+
+# Restore database
+cp /path/to/backup/memos-backup.db ~/.memos/memos_prod.db
+
+# Restore assets
+rm -rf ~/.memos/assets
+tar -xzf /path/to/backup/assets-backup.tar.gz -C ~/.memos
+
+# Fix permissions
+chown -R memos:memos ~/.memos
+
+# Restart Memos
+sudo systemctl start memos
+```
+
+## MySQL Backup
+
+### Method 1: mysqldump (Recommended)
+
+Use `mysqldump` for logical backups:
+
+```bash
+# Backup
+mysqldump -u memos_user -p memos_db > memos-backup-$(date +%Y%m%d).sql
+
+# With compression
+mysqldump -u memos_user -p memos_db | gzip > memos-backup-$(date +%Y%m%d).sql.gz
+
+# Don't forget to backup assets
+tar -czf assets-backup-$(date +%Y%m%d).tar.gz -C ~/.memos assets
+```
+
+### Method 2: Automated MySQL Backup
+
+```bash
+#!/bin/bash
+# File: /usr/local/bin/backup-memos-mysql.sh
+
+set -e
+
+BACKUP_DIR="/var/backups/memos"
+DATE=$(date +%Y%m%d-%H%M%S)
+DB_USER="memos_user"
+DB_NAME="memos_db"
+MEMOS_DATA="${MEMOS_DATA:-$HOME/.memos}"
+
+mkdir -p "$BACKUP_DIR"
+
+# Backup database (password should be in ~/.my.cnf)
+mysqldump -u "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_DIR/memos-$DATE.sql.gz"
+
+# Backup assets
+tar -czf "$BACKUP_DIR/assets-$DATE.tar.gz" -C "$MEMOS_DATA" assets
+
+# Keep only last 14 days
+find "$BACKUP_DIR" -name "memos-*.sql.gz" -mtime +14 -delete
+find "$BACKUP_DIR" -name "assets-*.tar.gz" -mtime +14 -delete
+
+echo "Backup completed: $DATE"
+```
+
+Store MySQL password securely in `~/.my.cnf`:
+
+```ini
+[client]
+password=your_secure_password
+```
+
+```bash
+chmod 600 ~/.my.cnf
+```
+
+### MySQL Restore
+
+```bash
+# Stop Memos
+sudo systemctl stop memos
+
+# Restore database
+mysql -u memos_user -p memos_db < memos-backup.sql
+# or with compression
+gunzip < memos-backup.sql.gz | mysql -u memos_user -p memos_db
+
+# Restore assets
+rm -rf ~/.memos/assets
+tar -xzf assets-backup.tar.gz -C ~/.memos
+
+# Restart Memos
+sudo systemctl start memos
+```
+
+## PostgreSQL Backup
+
+### Method 1: pg_dump (Recommended)
+
+```bash
+# Backup
+pg_dump -U memos_user -d memos_db -F c -f memos-backup-$(date +%Y%m%d).dump
+
+# Or plain SQL format
+pg_dump -U memos_user -d memos_db > memos-backup-$(date +%Y%m%d).sql
+
+# With compression
+pg_dump -U memos_user -d memos_db | gzip > memos-backup-$(date +%Y%m%d).sql.gz
+
+# Backup assets
+tar -czf assets-backup-$(date +%Y%m%d).tar.gz -C ~/.memos assets
+```
+
+### Method 2: Automated PostgreSQL Backup
+
+```bash
+#!/bin/bash
+# File: /usr/local/bin/backup-memos-postgres.sh
+
+set -e
+
+BACKUP_DIR="/var/backups/memos"
+DATE=$(date +%Y%m%d-%H%M%S)
+DB_USER="memos_user"
+DB_NAME="memos_db"
+MEMOS_DATA="${MEMOS_DATA:-$HOME/.memos}"
+
+mkdir -p "$BACKUP_DIR"
+
+# Backup database (password in ~/.pgpass)
+pg_dump -U "$DB_USER" -d "$DB_NAME" -F c -f "$BACKUP_DIR/memos-$DATE.dump"
+
+# Backup assets
+tar -czf "$BACKUP_DIR/assets-$DATE.tar.gz" -C "$MEMOS_DATA" assets
+
+# Keep only last 14 days
+find "$BACKUP_DIR" -name "memos-*.dump" -mtime +14 -delete
+find "$BACKUP_DIR" -name "assets-*.tar.gz" -mtime +14 -delete
+
+echo "Backup completed: $DATE"
+```
+
+Store PostgreSQL password in `~/.pgpass`:
+
+```
+localhost:5432:memos_db:memos_user:your_secure_password
+```
+
+```bash
+chmod 600 ~/.pgpass
+```
+
+### PostgreSQL Restore
+
+```bash
+# Stop Memos
+sudo systemctl stop memos
+
+# Restore database (custom format)
+pg_restore -U memos_user -d memos_db --clean --if-exists memos-backup.dump
+
+# Or restore SQL format
+psql -U memos_user -d memos_db < memos-backup.sql
+
+# Restore assets
+rm -rf ~/.memos/assets
+tar -xzf assets-backup.tar.gz -C ~/.memos
+
+# Restart Memos
+sudo systemctl start memos
+```
+
+## Backup Verification
+
+Always verify your backups are restorable:
+
+### SQLite Verification
+
+```bash
+# Check database integrity
+sqlite3 memos-backup.db "PRAGMA integrity_check;"
+
+# Expected output: ok
+```
+
+### MySQL Verification
+
+```bash
+# Test restore to temporary database
+mysql -u root -p -e "CREATE DATABASE memos_test;"
+mysql -u root -p memos_test < memos-backup.sql
+mysql -u root -p -e "DROP DATABASE memos_test;"
+```
+
+### PostgreSQL Verification
+
+```bash
+# Test restore to temporary database
+createdb -U postgres memos_test
+pg_restore -U postgres -d memos_test memos-backup.dump
+dropdb -U postgres memos_test
+```
+
+## Migration Between Databases
+
+Migrating between different database engines requires exporting and re-importing data:
+
+### Export Data (Any Database)
+
+Use the Memos API to export all memos:
+
+```bash
+#!/bin/bash
+# Export all memos via API
+
+TOKEN="your_access_token"
+API="http://localhost:8081/api/v1"
+OUTPUT_DIR="./export"
+
+mkdir -p "$OUTPUT_DIR"
+
+# Export memos
+curl -H "Authorization: Bearer $TOKEN" \
+  "$API/memos?limit=1000" > "$OUTPUT_DIR/memos.json"
+
+echo "Export completed"
+```
+
+### Import to New Database
+
+1. Set up new database (SQLite/MySQL/PostgreSQL)
+2. Update `MEMOS_DRIVER` and `MEMOS_DSN`
+3. Start Memos (it will create schema)
+4. Use API or manual SQL to import data
+
+**Note**: Direct database migration is not officially supported. For major migrations, consider:
+- Exporting via API
+- Using database-specific tools (e.g., pgloader for PostgreSQL)
+- Manual data transfer with SQL scripts
+
+## Cloud Storage Integration
+
+Backup to cloud storage for off-site protection:
+
+### AWS S3
+
+```bash
+# Install AWS CLI
+apt install awscli
+
+# Configure credentials
+aws configure
+
+# Upload backup
+aws s3 cp memos-backup.db s3://my-bucket/memos-backups/memos-$(date +%Y%m%d).db
+aws s3 cp assets-backup.tar.gz s3://my-bucket/memos-backups/assets-$(date +%Y%m%d).tar.gz
+```
+
+### Backblaze B2
+
+```bash
+# Install B2 CLI
+pip install b2
+
+# Authorize
+b2 authorize-account <key_id> <app_key>
+
+# Upload backup
+b2 upload-file my-bucket memos-backup.db memos-backups/memos-$(date +%Y%m%d).db
+```
+
+### rclone (Multiple Providers)
+
+```bash
+# Install rclone
+curl https://rclone.org/install.sh | sudo bash
+
+# Configure (supports S3, B2, Google Drive, Dropbox, etc.)
+rclone config
+
+# Sync backups
+rclone sync /var/backups/memos remote:memos-backups
+```
+
+## Disaster Recovery Checklist
+
+- [ ] Regular automated backups (daily minimum)
+- [ ] Off-site backup storage (cloud or remote server)
+- [ ] Backup verification (monthly test restore)
+- [ ] Documented restore procedure
+- [ ] Backup retention policy (e.g., 30 days)
+- [ ] Monitor backup job success/failure
+- [ ] Backup both database AND assets directory
+
+## Backup Best Practices
+
+1. **3-2-1 Rule**: 3 copies, 2 different media, 1 off-site
+2. **Test Restores**: Regularly verify backups are restorable
+3. **Automate**: Use cron jobs for scheduled backups
+4. **Monitor**: Set up alerts for backup failures
+5. **Encrypt**: Encrypt backups containing sensitive data
+6. **Version**: Keep multiple backup versions (rolling window)
+7. **Document**: Keep restore procedures up to date
+
+## Example: Complete Backup Strategy
+
+```bash
+#!/bin/bash
+# Complete backup strategy for production Memos
+
+set -e
+
+BACKUP_DIR="/var/backups/memos"
+DATE=$(date +%Y%m%d-%H%M%S)
+MEMOS_DATA="${MEMOS_DATA:-/var/lib/memos}"
+S3_BUCKET="s3://my-memos-backups"
+RETENTION_DAYS=30
+
+mkdir -p "$BACKUP_DIR"
+
+# Backup database (SQLite example)
+echo "Backing up database..."
+sqlite3 "$MEMOS_DATA/memos_prod.db" ".backup $BACKUP_DIR/memos-$DATE.db"
+
+# Backup assets
+echo "Backing up assets..."
+tar -czf "$BACKUP_DIR/assets-$DATE.tar.gz" -C "$MEMOS_DATA" assets
+
+# Verify database integrity
+echo "Verifying backup..."
+sqlite3 "$BACKUP_DIR/memos-$DATE.db" "PRAGMA integrity_check;" | grep -q "ok" || {
+  echo "Backup verification failed!"
+  exit 1
+}
+
+# Upload to S3
+echo "Uploading to S3..."
+aws s3 cp "$BACKUP_DIR/memos-$DATE.db" "$S3_BUCKET/memos-$DATE.db"
+aws s3 cp "$BACKUP_DIR/assets-$DATE.tar.gz" "$S3_BUCKET/assets-$DATE.tar.gz"
+
+# Clean up old local backups
+echo "Cleaning old backups..."
+find "$BACKUP_DIR" -name "memos-*.db" -mtime +7 -delete
+find "$BACKUP_DIR" -name "assets-*.tar.gz" -mtime +7 -delete
+
+# Clean up old S3 backups (requires aws-cli)
+aws s3 ls "$S3_BUCKET/" | awk '{print $4}' | while read file; do
+  if [[ "$file" =~ ^(memos|assets)-.* ]]; then
+    file_date=$(echo "$file" | grep -oP '\d{8}')
+    if [[ $(($(date +%s) - $(date -d "$file_date" +%s))) -gt $((RETENTION_DAYS * 86400)) ]]; then
+      aws s3 rm "$S3_BUCKET/$file"
+    fi
+  fi
+done
+
+echo "Backup completed successfully: $DATE"
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="sitemap" href="/advanced/architecture">
+    Understand Memos system architecture
+  </Card>
+  <Card title="Security" icon="shield" href="/advanced/security">
+    Security best practices and hardening
+  </Card>
+  <Card title="Performance Tuning" icon="gauge" href="/advanced/performance-tuning">
+    Optimize for production workloads
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/installation/docker">
+    Deployment guides for various platforms
+  </Card>
+</CardGroup>

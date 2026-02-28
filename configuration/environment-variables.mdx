@@ -1,0 +1,257 @@
+---
+title: Environment Variables
+description: Complete reference for all Memos environment variables
+---
+
+Memos can be configured using command-line flags or environment variables. Environment variables are prefixed with `MEMOS_` and use underscores instead of hyphens.
+
+## How Environment Variables Work
+
+Memos uses [Viper](https://github.com/spf13/viper) for configuration management with automatic environment variable binding:
+
+- All flags are automatically bound to environment variables
+- Prefix: `MEMOS_`
+- Replace hyphens with underscores (e.g., `--data` becomes `MEMOS_DATA`)
+- Environment variables take precedence over default values but not over explicit flags
+
+```go
+viper.SetEnvPrefix("memos")
+viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+viper.AutomaticEnv()
+```
+
+Source: `cmd/memos/main.go:134-136`
+
+## Core Server Variables
+
+<ParamField path="MEMOS_PORT" type="integer" default="8081">
+  HTTP port for the server to listen on.
+  
+  ```bash
+  export MEMOS_PORT=5230
+  ./memos
+  ```
+  
+  The server will be accessible at `http://localhost:5230`
+</ParamField>
+
+<ParamField path="MEMOS_ADDR" type="string" default="">
+  Bind address for the server. Empty means all interfaces (0.0.0.0).
+  
+  ```bash
+  # Listen only on localhost
+  export MEMOS_ADDR=127.0.0.1
+  
+  # Listen on all interfaces (default)
+  export MEMOS_ADDR=""
+  ```
+  
+  Use `127.0.0.1` for local development to prevent external access.
+</ParamField>
+
+<ParamField path="MEMOS_UNIX_SOCK" type="string" default="">
+  Path to Unix socket file. When set, this overrides `MEMOS_ADDR` and `MEMOS_PORT`.
+  
+  ```bash
+  export MEMOS_UNIX_SOCK=/var/run/memos.sock
+  ./memos
+  ```
+  
+  Useful for reverse proxy setups with nginx or Apache.
+</ParamField>
+
+## Data Storage Variables
+
+<ParamField path="MEMOS_DATA" type="string" default="auto">
+  Data directory for SQLite database and local file storage.
+  
+  **Default behavior:**
+  - **Windows:** `%ProgramData%\memos`
+  - **Linux/macOS (Docker):** `/var/opt/memos` if writable
+  - **Linux/macOS (Local):** `.` (current directory)
+  
+  ```bash
+  # Custom data directory
+  export MEMOS_DATA=/opt/memos/data
+  ./memos
+  ```
+  
+  Source: `internal/profile/profile.go:58-80`
+</ParamField>
+
+<ParamField path="MEMOS_DRIVER" type="string" default="sqlite">
+  Database driver to use.
+  
+  **Supported values:**
+  - `sqlite` - SQLite (recommended for single server)
+  - `mysql` - MySQL/MariaDB
+  - `postgres` - PostgreSQL
+  
+  ```bash
+  export MEMOS_DRIVER=postgres
+  export MEMOS_DSN="postgres://user:pass@localhost:5432/memos"
+  ./memos
+  ```
+  
+  Source: `store/db/db.go:18-27`
+</ParamField>
+
+<ParamField path="MEMOS_DSN" type="string" default="auto">
+  Database connection string (DSN - Data Source Name).
+  
+  **Default behavior:**
+  - If `MEMOS_DRIVER=sqlite` and DSN is empty, defaults to `{MEMOS_DATA}/memos_prod.db`
+  - For MySQL/PostgreSQL, DSN is required
+  
+  See [Database Configuration](/configuration/database) for connection string formats.
+</ParamField>
+
+## Instance Configuration
+
+<ParamField path="MEMOS_INSTANCE_URL" type="string" default="">
+  The public URL of your Memos instance. Used for:
+  - OAuth2 redirect URIs
+  - Email links
+  - RSS feed URLs
+  - API webhook callbacks
+  
+  ```bash
+  export MEMOS_INSTANCE_URL=https://memos.example.com
+  ./memos
+  ```
+  
+  <Warning>
+    Always include the protocol (`https://`) and omit the trailing slash.
+  </Warning>
+</ParamField>
+
+<ParamField path="MEMOS_DEMO" type="boolean" default="false">
+  Enable demo mode for testing and development.
+  
+  **Demo mode features:**
+  - Uses `memos_demo.db` instead of `memos_prod.db`
+  - Seeds database with sample data on first run
+  - Shows database DSN in startup logs
+  - **Not for production use**
+  
+  ```bash
+  export MEMOS_DEMO=true
+  ./memos
+  ```
+  
+  Source: `cmd/memos/main.go:29`, `internal/profile/profile.go:98-103`
+</ParamField>
+
+## Command-Line Flags
+
+All environment variables have corresponding command-line flags:
+
+```bash
+./memos --help
+```
+
+**Available flags:**
+
+| Flag | Env Variable | Default | Description |
+|------|--------------|---------|-------------|
+| `--demo` | `MEMOS_DEMO` | `false` | Enable demo mode |
+| `--addr` | `MEMOS_ADDR` | `""` | Bind address |
+| `--port` | `MEMOS_PORT` | `8081` | HTTP port |
+| `--unix-sock` | `MEMOS_UNIX_SOCK` | `""` | Unix socket path |
+| `--data` | `MEMOS_DATA` | auto | Data directory |
+| `--driver` | `MEMOS_DRIVER` | `sqlite` | Database driver |
+| `--dsn` | `MEMOS_DSN` | auto | Database connection string |
+| `--instance-url` | `MEMOS_INSTANCE_URL` | `""` | Instance URL |
+
+Source: `cmd/memos/main.go:100-107`
+
+## Examples
+
+### Development Setup
+
+```bash
+export MEMOS_DEMO=true
+export MEMOS_PORT=8081
+export MEMOS_DATA=./dev-data
+./memos
+```
+
+### Production with PostgreSQL
+
+```bash
+export MEMOS_DRIVER=postgres
+export MEMOS_DSN="postgres://memos:secret@localhost:5432/memos?sslmode=require"
+export MEMOS_INSTANCE_URL=https://memos.example.com
+export MEMOS_DATA=/var/lib/memos
+./memos
+```
+
+### Docker Environment Variables
+
+```bash
+docker run -d \
+  --name memos \
+  -p 5230:5230 \
+  -e MEMOS_PORT=5230 \
+  -e MEMOS_DRIVER=postgres \
+  -e MEMOS_DSN="postgres://user:pass@db:5432/memos" \
+  -e MEMOS_INSTANCE_URL=https://memos.example.com \
+  -v ~/.memos:/var/opt/memos \
+  neosmemo/memos:stable
+```
+
+### Using Unix Socket with Nginx
+
+```bash
+export MEMOS_UNIX_SOCK=/var/run/memos.sock
+export MEMOS_DATA=/var/lib/memos
+export MEMOS_INSTANCE_URL=https://memos.example.com
+./memos
+```
+
+Nginx configuration:
+
+```nginx
+upstream memos {
+    server unix:/var/run/memos.sock;
+}
+
+server {
+    listen 443 ssl;
+    server_name memos.example.com;
+    
+    location / {
+        proxy_pass http://memos;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+## Priority Order
+
+When the same configuration is specified in multiple ways:
+
+1. **Command-line flags** (highest priority)
+2. **Environment variables**
+3. **Default values** (lowest priority)
+
+Example:
+
+```bash
+export MEMOS_PORT=8081
+./memos --port 5230  # Server will use port 5230 (flag takes precedence)
+```
+
+## Validation
+
+Memos validates configuration on startup:
+
+- Data directory must exist and be writable
+- DSN is required for MySQL/PostgreSQL drivers
+- Port must be between 1-65535
+- Unix socket path must be valid
+
+Source: `internal/profile/profile.go:57-107`

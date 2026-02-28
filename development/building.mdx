@@ -1,0 +1,420 @@
+---
+title: 'Building the Project'
+description: 'Build production-ready binaries and Docker images for Memos'
+---
+
+This guide covers building Memos for production deployment, including standalone binaries, Docker images, and optimized frontend builds.
+
+## Building the Backend
+
+Memos backend is a single Go binary with embedded frontend assets.
+
+### Development Build
+
+Quick build for testing:
+
+```bash
+go build -o memos ./cmd/memos
+```
+
+Run the binary:
+```bash
+./memos --port 8081
+```
+
+### Production Build
+
+Optimized build with version information:
+
+```bash
+VERSION=$(git describe --tags --always --dirty)
+go build -o memos \
+  -ldflags="-s -w -X github.com/usememos/memos/internal/version.Version=${VERSION}" \
+  ./cmd/memos
+```
+
+Flags explained:
+- `-s -w` - Strip debug symbols (reduces binary size)
+- `-X` - Set version variable at compile time
+
+### Cross-Compilation
+
+Build for different platforms:
+
+<CodeGroup>
+```bash Linux AMD64
+GOOS=linux GOARCH=amd64 go build -o memos-linux-amd64 ./cmd/memos
+```
+
+```bash Linux ARM64
+GOOS=linux GOARCH=arm64 go build -o memos-linux-arm64 ./cmd/memos
+```
+
+```bash macOS Intel
+GOOS=darwin GOARCH=amd64 go build -o memos-darwin-amd64 ./cmd/memos
+```
+
+```bash macOS Apple Silicon
+GOOS=darwin GOARCH=arm64 go build -o memos-darwin-arm64 ./cmd/memos
+```
+
+```bash Windows
+GOOS=windows GOARCH=amd64 go build -o memos-windows-amd64.exe ./cmd/memos
+```
+</CodeGroup>
+
+## Building the Frontend
+
+The frontend is a React application built with Vite.
+
+### Development Build
+
+Build without optimizations:
+
+```bash
+cd web
+pnpm build
+```
+
+Output: `web/dist/`
+
+### Production Build
+
+Optimized build with minification and code splitting:
+
+```bash
+cd web
+pnpm release
+```
+
+This command:
+1. Runs Vite in production mode
+2. Enables minification and tree-shaking
+3. Outputs to `server/router/frontend/dist/`
+4. Clears previous build artifacts
+
+The frontend is then embedded into the Go binary at compile time.
+
+### Build Configuration
+
+Vite configuration (`web/vite.config.mts`):
+
+```typescript
+export default defineConfig({
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    minify: 'terser',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'utils-vendor': ['lodash-es', 'dayjs', 'copy-to-clipboard'],
+          'mermaid-vendor': ['mermaid'],
+          'leaflet-vendor': ['leaflet', 'react-leaflet']
+        }
+      }
+    }
+  }
+});
+```
+
+Manual chunking reduces initial bundle size and improves caching.
+
+## Complete Production Build
+
+Build both frontend and backend together:
+
+<Steps>
+  <Step title="Build frontend">
+    ```bash
+    cd web
+    pnpm install --frozen-lockfile
+    pnpm release
+    cd ..
+    ```
+  </Step>
+
+  <Step title="Build backend with embedded frontend">
+    ```bash
+    VERSION=$(git describe --tags --always)
+    go build -o memos \
+      -ldflags="-s -w -X github.com/usememos/memos/internal/version.Version=${VERSION}" \
+      ./cmd/memos
+    ```
+  </Step>
+
+  <Step title="Verify the build">
+    ```bash
+    ./memos --version
+    ```
+  </Step>
+</Steps>
+
+## Building with Docker
+
+### Official Multi-Stage Dockerfile
+
+Memos uses a multi-stage build for efficiency:
+
+```dockerfile
+# Stage 1: Build frontend
+FROM node:22-alpine AS frontend-builder
+WORKDIR /app
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN npm install -g pnpm@10 && pnpm install --frozen-lockfile
+COPY web/ .
+RUN pnpm release
+
+# Stage 2: Build backend
+FROM golang:1.25-alpine AS backend-builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=frontend-builder /app/server/router/frontend/dist ./server/router/frontend/dist
+RUN go build -o memos -ldflags="-s -w" ./cmd/memos
+
+# Stage 3: Runtime
+FROM alpine:latest
+RUN apk add --no-cache tzdata
+COPY --from=backend-builder /app/memos /usr/local/bin/memos
+EXPOSE 5230
+CMD ["memos"]
+```
+
+### Build Docker Image
+
+```bash
+docker build -t memos:dev .
+```
+
+With build arguments:
+```bash
+docker build \
+  --build-arg VERSION=$(git describe --tags) \
+  -t memos:latest \
+  .
+```
+
+### Multi-Platform Build
+
+Build for multiple architectures using buildx:
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t neosmemo/memos:latest \
+  --push \
+  .
+```
+
+## Build Optimization
+
+### Backend Optimizations
+
+<AccordionGroup>
+  <Accordion title="Enable CGO for SQLite performance">
+    By default, Memos uses pure-Go SQLite (`modernc.org/sqlite`). For better performance, build with CGO:
+
+    ```bash
+    CGO_ENABLED=1 go build -o memos ./cmd/memos
+    ```
+
+    <Warning>CGO builds are not cross-platform compatible. Build on the target OS.</Warning>
+  </Accordion>
+
+  <Accordion title="Static linking for portability">
+    Create fully static binaries:
+
+    ```bash
+    CGO_ENABLED=0 go build \
+      -ldflags="-s -w -extldflags '-static'" \
+      -o memos ./cmd/memos
+    ```
+  </Accordion>
+
+  <Accordion title="Profile-guided optimization (PGO)">
+    Go 1.21+ supports PGO. Generate a CPU profile from production, then:
+
+    ```bash
+    go build -pgo=default.pgo -o memos ./cmd/memos
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Frontend Optimizations
+
+<AccordionGroup>
+  <Accordion title="Analyze bundle size">
+    Generate a bundle analysis:
+
+    ```bash
+    cd web
+    pnpm build -- --mode analyze
+    ```
+
+    Open the generated report in `web/dist/stats.html`.
+  </Accordion>
+
+  <Accordion title="Tree-shaking improvements">
+    Vite automatically tree-shakes unused code. Ensure imports are ESM-compatible:
+
+    ```typescript
+    // Good - tree-shakeable
+    import { map } from 'lodash-es';
+
+    // Bad - imports entire library
+    import _ from 'lodash';
+    ```
+  </Accordion>
+
+  <Accordion title="Code splitting strategies">
+    Lazy load heavy components:
+
+    ```typescript
+    const MermaidRenderer = lazy(() => import('./MermaidRenderer'));
+    ```
+
+    Configure route-based splitting in `vite.config.mts`.
+  </Accordion>
+</AccordionGroup>
+
+## CI/CD Builds
+
+Memos uses GitHub Actions for automated builds.
+
+### Backend Build Workflow
+
+```yaml .github/workflows/build-binaries.yml
+name: Build Binaries
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.7'
+      - run: |
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
+          go build -o memos-${{ matrix.os }}-${{ matrix.arch }} ./cmd/memos
+```
+
+### Docker Build Workflow
+
+```yaml .github/workflows/build-stable-image.yml
+name: Build Docker Image
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: neosmemo/memos:stable
+```
+
+## Build Artifacts
+
+After building, you'll have:
+
+<CardGroup cols={2}>
+  <Card title="Backend Binary" icon="file-binary">
+    - Single executable file
+    - ~40-60 MB (stripped)
+    - Embeds frontend assets
+    - Self-contained
+  </Card>
+  <Card title="Docker Image" icon="docker">
+    - Multi-platform support
+    - ~60-80 MB compressed
+    - Alpine-based
+    - Includes all dependencies
+  </Card>
+</CardGroup>
+
+## Verifying Builds
+
+<Steps>
+  <Step title="Check binary version">
+    ```bash
+    ./memos --version
+    ```
+  </Step>
+
+  <Step title="Test basic functionality">
+    ```bash
+    ./memos --mode demo --port 8081
+    ```
+
+    Visit `http://localhost:8081` and verify the UI loads.
+  </Step>
+
+  <Step title="Run smoke tests">
+    ```bash
+    # Backend health check
+    curl http://localhost:8081/healthz
+
+    # Frontend loads
+    curl http://localhost:8081/ | grep "<div id=\"root\"></div>"
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Frontend assets not embedded">
+    Ensure you run `pnpm release` (not `pnpm build`) before building the Go binary.
+
+    Verify assets exist:
+    ```bash
+    ls -la server/router/frontend/dist/
+    ```
+  </Accordion>
+
+  <Accordion title="Binary size is too large">
+    Use linker flags to strip symbols:
+    ```bash
+    go build -ldflags="-s -w" ./cmd/memos
+    ```
+
+    Compare sizes:
+    ```bash
+    ls -lh memos
+    ```
+  </Accordion>
+
+  <Accordion title="CGO errors on cross-compilation">
+    Disable CGO for cross-platform builds:
+    ```bash
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./cmd/memos
+    ```
+  </Accordion>
+
+  <Accordion title="Docker build fails on ARM">
+    Use buildx for multi-platform builds:
+    ```bash
+    docker buildx create --use
+    docker buildx build --platform linux/arm64 -t memos:arm64 .
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Test your builds before deployment
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/development/contributing">
+    Submit your changes upstream
+  </Card>
+</CardGroup>

@@ -1,0 +1,232 @@
+---
+title: Docker Installation
+description: Run Memos using Docker with a single command
+---
+
+Docker is the recommended way to run Memos. It provides a consistent environment and makes installation simple.
+
+## Quick Start
+
+Run Memos with a single command:
+
+```bash
+docker run -d \
+  --name memos \
+  -p 5230:5230 \
+  -v ~/.memos:/var/opt/memos \
+  neosmemo/memos:stable
+```
+
+Open `http://localhost:5230` in your browser and start using Memos!
+
+## Image Tags
+
+Memos provides multiple Docker image tags:
+
+- `stable` - Latest stable release (recommended for production)
+- `0.28` - Latest patch version of 0.28.x
+- `0.28.1` - Specific version
+- `latest` - Development build from main branch (not recommended for production)
+
+## Data Persistence
+
+Memos stores all data in `/var/opt/memos` inside the container. Mount this directory to persist your data:
+
+```bash
+-v ~/.memos:/var/opt/memos
+```
+
+You can use any host path:
+
+```bash
+-v /path/to/your/data:/var/opt/memos
+```
+
+## Environment Variables
+
+<Steps>
+  <Step title="Configure basic settings">
+    Control Memos behavior using environment variables from `cmd/memos/main.go:23-137`:
+
+    ```bash
+    docker run -d \
+      --name memos \
+      -p 5230:5230 \
+      -v ~/.memos:/var/opt/memos \
+      -e MEMOS_PORT=5230 \
+      -e MEMOS_DRIVER=sqlite \
+      neosmemo/memos:stable
+    ```
+  </Step>
+
+  <Step title="Available variables">
+    | Variable | Default | Description |
+    |----------|---------|-------------|
+    | `MEMOS_PORT` | `8081` | HTTP server port (container default: 5230) |
+    | `MEMOS_ADDR` | `` | Bind address (empty = all interfaces) |
+    | `MEMOS_DATA` | `~/.memos` | Data directory path |
+    | `MEMOS_DRIVER` | `sqlite` | Database driver: `sqlite`, `mysql`, `postgres` |
+    | `MEMOS_DSN` | `` | Database connection string |
+    | `MEMOS_INSTANCE_URL` | `` | Public instance URL |
+    | `MEMOS_DEMO` | `false` | Enable demo mode |
+  </Step>
+</Steps>
+
+## Using External Database
+
+### MySQL
+
+```bash
+docker run -d \
+  --name memos \
+  -p 5230:5230 \
+  -v ~/.memos:/var/opt/memos \
+  -e MEMOS_DRIVER=mysql \
+  -e MEMOS_DSN="user:password@tcp(mysql-host:3306)/memos" \
+  neosmemo/memos:stable
+```
+
+### PostgreSQL
+
+```bash
+docker run -d \
+  --name memos \
+  -p 5230:5230 \
+  -v ~/.memos:/var/opt/memos \
+  -e MEMOS_DRIVER=postgres \
+  -e MEMOS_DSN="postgres://user:password@postgres-host:5432/memos?sslmode=disable" \
+  neosmemo/memos:stable
+```
+
+<Note>
+When using external databases, you may not need the data volume for database files, but it's still used for attachments and other assets.
+</Note>
+
+## Security: Using Docker Secrets
+
+For sensitive credentials, use Docker secrets instead of environment variables:
+
+```bash
+echo "postgres://user:password@host:5432/memos" | docker secret create memos_dsn -
+
+docker run -d \
+  --name memos \
+  -p 5230:5230 \
+  -v ~/.memos:/var/opt/memos \
+  -e MEMOS_DRIVER=postgres \
+  -e MEMOS_DSN_FILE=/run/secrets/memos_dsn \
+  --secret memos_dsn \
+  neosmemo/memos:stable
+```
+
+The entrypoint script (`scripts/entrypoint.sh:17-41`) supports `*_FILE` suffix for any environment variable.
+
+## Container User
+
+Memos runs as a non-root user for security:
+
+- UID: `10001`
+- GID: `10001`
+- Username: `nonroot`
+- Home: `/var/opt/memos`
+
+The entrypoint script automatically fixes ownership of mounted volumes (`scripts/entrypoint.sh:3-15`).
+
+### Custom UID/GID
+
+Override the default user IDs:
+
+```bash
+docker run -d \
+  --name memos \
+  -p 5230:5230 \
+  -v ~/.memos:/var/opt/memos \
+  -e MEMOS_UID=1000 \
+  -e MEMOS_GID=1000 \
+  neosmemo/memos:stable
+```
+
+## Container Management
+
+### View Logs
+
+```bash
+docker logs memos
+
+# Follow logs
+docker logs -f memos
+```
+
+### Stop Container
+
+```bash
+docker stop memos
+```
+
+### Start Container
+
+```bash
+docker start memos
+```
+
+### Restart Container
+
+```bash
+docker restart memos
+```
+
+### Remove Container
+
+```bash
+docker stop memos
+docker rm memos
+```
+
+<Warning>
+Removing the container does not delete your data if you mounted a volume. Your data remains in the host directory.
+</Warning>
+
+## Updating Memos
+
+<Steps>
+  <Step title="Pull the latest image">
+    ```bash
+    docker pull neosmemo/memos:stable
+    ```
+  </Step>
+
+  <Step title="Stop and remove the old container">
+    ```bash
+    docker stop memos
+    docker rm memos
+    ```
+  </Step>
+
+  <Step title="Start a new container">
+    ```bash
+    docker run -d \
+      --name memos \
+      -p 5230:5230 \
+      -v ~/.memos:/var/opt/memos \
+      neosmemo/memos:stable
+    ```
+  </Step>
+</Steps>
+
+Your data is preserved because it's stored in the mounted volume.
+
+## Platform Support
+
+The Docker image supports multiple architectures (`scripts/Dockerfile:1`):
+
+- `linux/amd64` - x86_64 processors
+- `linux/arm64` - ARM 64-bit (Apple Silicon, Raspberry Pi 4+)
+- `linux/arm/v7` - ARM 32-bit (Raspberry Pi 2/3)
+
+Docker automatically selects the correct image for your platform.
+
+## Next Steps
+
+- [Configure Docker Compose](/installation/docker-compose) for production deployments
+- [Set up with Kubernetes](/installation/kubernetes) for orchestration
+- Learn about [configuration options](/configuration/environment-variables)

@@ -1,0 +1,514 @@
+---
+title: Docker Compose Setup
+description: Deploy Memos with Docker Compose for production environments
+---
+
+Docker Compose is recommended for production deployments. It provides a declarative configuration and makes it easy to manage services.
+
+## Basic Setup
+
+The official compose file is at `scripts/compose.yaml:1-9`.
+
+### Create docker-compose.yml
+
+```yaml docker-compose.yml
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    volumes:
+      - ~/.memos:/var/opt/memos
+    ports:
+      - 5230:5230
+```
+
+### Start Memos
+
+```bash
+docker compose up -d
+```
+
+### View Logs
+
+```bash
+docker compose logs -f
+```
+
+### Stop Memos
+
+```bash
+docker compose down
+```
+
+## Production Configuration
+
+A more complete production setup with custom settings:
+
+```yaml docker-compose.yml
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    restart: unless-stopped
+    
+    volumes:
+      - ./data:/var/opt/memos
+    
+    ports:
+      - "5230:5230"
+    
+    environment:
+      # Server configuration
+      MEMOS_PORT: 5230
+      MEMOS_DRIVER: sqlite
+      MEMOS_INSTANCE_URL: https://memos.example.com
+      
+    # Security
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5230/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+```
+
+## With MySQL
+
+Run Memos with a MySQL database:
+
+```yaml docker-compose.yml
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    
+    volumes:
+      - ./attachments:/var/opt/memos
+    
+    ports:
+      - "5230:5230"
+    
+    environment:
+      MEMOS_DRIVER: mysql
+      MEMOS_DSN: memos:memos@tcp(mysql:3306)/memos
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5230/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mysql:
+    image: mysql:8.4
+    container_name: memos-mysql
+    restart: unless-stopped
+    
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+    
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_change_me
+      MYSQL_DATABASE: memos
+      MYSQL_USER: memos
+      MYSQL_PASSWORD: memos
+    
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+```
+
+<Warning>
+Change the default passwords before deploying to production!
+</Warning>
+
+## With PostgreSQL
+
+Run Memos with a PostgreSQL database:
+
+```yaml docker-compose.yml
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    volumes:
+      - ./attachments:/var/opt/memos
+    
+    ports:
+      - "5230:5230"
+    
+    environment:
+      MEMOS_DRIVER: postgres
+      MEMOS_DSN: postgres://memos:memos@postgres:5432/memos?sslmode=disable
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5230/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: memos-postgres
+    restart: unless-stopped
+    
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    
+    environment:
+      POSTGRES_DB: memos
+      POSTGRES_USER: memos
+      POSTGRES_PASSWORD: memos
+      PGDATA: /var/lib/postgresql/data/pgdata
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+```
+
+## With Reverse Proxy (Caddy)
+
+Add Caddy as a reverse proxy with automatic HTTPS:
+
+```yaml docker-compose.yml
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    restart: unless-stopped
+    
+    volumes:
+      - ./data:/var/opt/memos
+    
+    # Don't expose port directly, use Caddy instead
+    expose:
+      - 5230
+    
+    environment:
+      MEMOS_PORT: 5230
+      MEMOS_INSTANCE_URL: https://memos.example.com
+    
+    networks:
+      - memos-network
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: memos-caddy
+    restart: unless-stopped
+    
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+    
+    networks:
+      - memos-network
+
+networks:
+  memos-network:
+    driver: bridge
+```
+
+Create a `Caddyfile`:
+
+```caddy Caddyfile
+memos.example.com {
+    reverse_proxy memos:5230
+    
+    encode gzip
+    
+    log {
+        output file /data/access.log
+    }
+}
+```
+
+## With Reverse Proxy (Nginx)
+
+Alternatively, use Nginx as a reverse proxy:
+
+```yaml docker-compose.yml
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    restart: unless-stopped
+    
+    volumes:
+      - ./data:/var/opt/memos
+    
+    expose:
+      - 5230
+    
+    environment:
+      MEMOS_PORT: 5230
+    
+    networks:
+      - memos-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: memos-nginx
+    restart: unless-stopped
+    
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    
+    networks:
+      - memos-network
+
+networks:
+  memos-network:
+    driver: bridge
+```
+
+Create `nginx.conf`:
+
+```nginx nginx.conf
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream memos {
+        server memos:5230;
+    }
+
+    server {
+        listen 80;
+        server_name memos.example.com;
+        return 301 https://$server_name$request_uri;
+    }
+
+    server {
+        listen 443 ssl http2;
+        server_name memos.example.com;
+
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+        location / {
+            proxy_pass http://memos;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+```
+
+## Using Docker Secrets
+
+For secure credential management:
+
+<Steps>
+  <Step title="Create secrets">
+    ```bash
+    echo "postgres://user:password@postgres:5432/memos" | docker secret create memos_dsn -
+    ```
+  </Step>
+
+  <Step title="Update compose file">
+    ```yaml docker-compose.yml
+    services:
+      memos:
+        image: neosmemo/memos:stable
+        secrets:
+          - memos_dsn
+        environment:
+          MEMOS_DRIVER: postgres
+          MEMOS_DSN_FILE: /run/secrets/memos_dsn
+
+    secrets:
+      memos_dsn:
+        external: true
+    ```
+  </Step>
+</Steps>
+
+The entrypoint script supports `*_FILE` environment variables for secrets (`scripts/entrypoint.sh:17-41`).
+
+## Backup Strategy
+
+### Backup SQLite Database
+
+```yaml docker-compose.yml
+services:
+  # ... memos service ...
+
+  backup:
+    image: alpine:3.21
+    container_name: memos-backup
+    restart: unless-stopped
+    
+    volumes:
+      - ./data:/data:ro
+      - ./backups:/backups
+    
+    command: sh -c '
+      while true; do
+        timestamp=$$(date +%Y%m%d_%H%M%S)
+        cp /data/memos.db /backups/memos_$$timestamp.db
+        find /backups -name "memos_*.db" -mtime +7 -delete
+        sleep 86400
+      done
+    '
+```
+
+### Backup with PostgreSQL
+
+```yaml docker-compose.yml
+services:
+  # ... memos and postgres services ...
+
+  backup:
+    image: postgres:16-alpine
+    container_name: memos-backup
+    restart: unless-stopped
+    
+    volumes:
+      - ./backups:/backups
+    
+    environment:
+      PGPASSWORD: memos
+    
+    command: sh -c '
+      while true; do
+        timestamp=$$(date +%Y%m%d_%H%M%S)
+        pg_dump -h postgres -U memos -d memos | gzip > /backups/memos_$$timestamp.sql.gz
+        find /backups -name "memos_*.sql.gz" -mtime +7 -delete
+        sleep 86400
+      done
+    '
+```
+
+## Management Commands
+
+### Start services
+
+```bash
+docker compose up -d
+```
+
+### Stop services
+
+```bash
+docker compose down
+```
+
+### View logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f memos
+```
+
+### Restart services
+
+```bash
+docker compose restart
+```
+
+### Update Memos
+
+```bash
+# Pull latest image
+docker compose pull memos
+
+# Recreate container
+docker compose up -d memos
+```
+
+### Execute commands
+
+```bash
+# Open shell in container
+docker compose exec memos sh
+
+# Run memos with different flags
+docker compose exec memos memos --help
+```
+
+## Troubleshooting
+
+### Check service health
+
+```bash
+docker compose ps
+```
+
+### View resource usage
+
+```bash
+docker stats
+```
+
+### Inspect container
+
+```bash
+docker compose exec memos sh -c 'ls -la /var/opt/memos'
+```
+
+### Database connection issues
+
+Ensure the database is ready before Memos starts:
+
+```yaml
+depends_on:
+  postgres:
+    condition: service_healthy
+```
+
+<Note>
+The `healthcheck` configuration ensures the database is accepting connections before Memos tries to connect.
+</Note>
+
+## Next Steps
+
+- [Deploy to Kubernetes](/installation/kubernetes) for orchestration at scale
+- [Use plain Docker](/installation/docker) for simpler setups
+- Learn about [backup and restore](/guides/backup-restore)

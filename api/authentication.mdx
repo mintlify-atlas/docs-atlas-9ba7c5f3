@@ -1,0 +1,706 @@
+---
+title: Authentication
+description: Authentication methods, token formats, and security best practices
+---
+
+## Overview
+
+Memos supports three authentication methods for API access:
+
+1. **JWT Access Tokens (V2)** - Short-lived tokens (15 minutes) for active sessions
+2. **Personal Access Tokens (PAT)** - Long-lived tokens for scripts and automation
+3. **Refresh Tokens** - Long-lived tokens (30 days) for session renewal
+
+All authentication methods use the `Authorization` header with Bearer token format.
+
+See: `server/auth/authenticator.go:17-166`
+
+## Authentication Methods
+
+### JWT Access Tokens
+
+Access tokens are short-lived JWT tokens used for authenticated API requests. They are stateless and validated by signature only.
+
+**Characteristics:**
+- **Lifetime:** 15 minutes
+- **Validation:** Stateless (signature verification only)
+- **Storage:** Store in memory only (never in localStorage)
+- **Format:** Standard JWT with HS256 signing
+
+**Token Structure:**
+
+**Header:**
+```json
+{
+  "alg": "HS256",
+  "kid": "v1",
+  "typ": "JWT"
+}
+```
+
+**Claims:**
+```json
+{
+  "type": "access",
+  "iss": "memos",
+  "aud": ["user.access-token"],
+  "sub": "123",
+  "iat": 1709251200,
+  "exp": 1709252100,
+  "username": "demo",
+  "role": "USER",
+  "status": "ACTIVE"
+}
+```
+
+<ParamField path="type" type="string" required>
+  Token type, always `"access"`
+</ParamField>
+
+<ParamField path="iss" type="string" required>
+  Issuer, always `"memos"`
+</ParamField>
+
+<ParamField path="aud" type="array" required>
+  Audience, always `["user.access-token"]`
+</ParamField>
+
+<ParamField path="sub" type="string" required>
+  Subject - user ID as string
+</ParamField>
+
+<ParamField path="iat" type="number" required>
+  Issued at timestamp (Unix epoch)
+</ParamField>
+
+<ParamField path="exp" type="number" required>
+  Expiration timestamp (iat + 15 minutes)
+</ParamField>
+
+<ParamField path="username" type="string" required>
+  Username for display purposes
+</ParamField>
+
+<ParamField path="role" type="string" required>
+  User role: `"USER"`, `"ADMIN"`
+</ParamField>
+
+<ParamField path="status" type="string" required>
+  User status: `"ACTIVE"`, `"ARCHIVED"`
+</ParamField>
+
+**Signature:**
+HS256 signature using server secret.
+
+See: `server/auth/token.go:133-160`
+
+### Personal Access Tokens (PAT)
+
+PATs are long-lived tokens designed for programmatic access, scripts, and third-party integrations.
+
+**Characteristics:**
+- **Lifetime:** Configurable (30 days to never expires)
+- **Validation:** Stateful (database lookup required)
+- **Storage:** Store securely (environment variables, secrets manager)
+- **Format:** `memos_pat_` prefix + 32 random characters
+- **Hash:** SHA-256 hash stored in database
+
+**Token Format:**
+```
+memos_pat_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
+```
+
+**Token Prefix:**
+```go
+PersonalAccessTokenPrefix = "memos_pat_"
+```
+
+**Generation:**
+```go
+// Random 32-character string
+randomStr := util.RandomString(32)
+token := "memos_pat_" + randomStr
+
+// SHA-256 hash for database storage
+hash := sha256.Sum256([]byte(token))
+tokenHash := hex.EncodeToString(hash[:])
+```
+
+See: `server/auth/token.go:189-203`
+
+### Refresh Tokens
+
+Refresh tokens are long-lived tokens stored in HttpOnly cookies for session renewal.
+
+**Characteristics:**
+- **Lifetime:** 30 days
+- **Validation:** Stateful (database lookup for revocation)
+- **Storage:** HttpOnly cookie (`memos_refresh`)
+- **Rotation:** New refresh token generated on each refresh
+- **Format:** Standard JWT with HS256 signing
+
+**Token Claims:**
+```json
+{
+  "type": "refresh",
+  "tid": "550e8400-e29b-41d4-a716-446655440000",
+  "iss": "memos",
+  "aud": ["user.refresh-token"],
+  "sub": "123",
+  "iat": 1709251200,
+  "exp": 1711843200
+}
+```
+
+<ParamField path="type" type="string" required>
+  Token type, always `"refresh"`
+</ParamField>
+
+<ParamField path="tid" type="string" required>
+  Token ID (UUID) for database lookup and revocation
+</ParamField>
+
+**Cookie Attributes:**
+```
+memos_refresh=<token>; Path=/; HttpOnly; SameSite=Lax; Secure (HTTPS only); Expires=<30 days>
+```
+
+See: `server/auth/token.go:162-187`
+
+## Authentication Flow
+
+### Password Authentication
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as Memos API
+    participant DB as Database
+    
+    Client->>API: POST /api/v1/auth/signin<br/>{username, password}
+    API->>DB: Verify credentials
+    DB-->>API: User found
+    API->>API: Generate access token (15min)<br/>Generate refresh token (30d)
+    API->>DB: Store refresh token metadata
+    API-->>Client: Set-Cookie: memos_refresh<br/>Response: {access_token, user}
+    
+    Note over Client: Store access token in memory
+    
+    Client->>API: GET /api/v1/memos<br/>Authorization: Bearer <access_token>
+    API->>API: Validate JWT signature
+    API-->>Client: 200 OK {memos: [...]}
+```
+
+**1. Sign In Request:**
+
+```bash
+curl -X POST http://localhost:8081/api/v1/auth/signin \
+  -H "Content-Type: application/json" \
+  -d '{
+    "passwordCredentials": {
+      "username": "demo",
+      "password": "secret"
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "user": {
+    "name": "users/123",
+    "username": "demo",
+    "role": "USER",
+    "email": "demo@example.com"
+  },
+  "accessToken": "eyJhbGciOiJIUzI1NiIsImtpZCI6InYxIiwidHlwIjoiSldUIn0.eyJ0eXBlIjoiYWNjZXNzIiwiaXNzIjoibWVtb3MiLCJhdWQiOlsidXNlci5hY2Nlc3MtdG9rZW4iXSwic3ViIjoiMTIzIiwiaWF0IjoxNzA5MjUxMjAwLCJleHAiOjE3MDkyNTIxMDAsInVzZXJuYW1lIjoiZGVtbyIsInJvbGUiOiJVU0VSIiwic3RhdHVzIjoiQUNUSVZFIn0.signature",
+  "accessTokenExpiresAt": "2026-03-01T10:15:00Z"
+}
+```
+
+**Set-Cookie Header:**
+```
+Set-Cookie: memos_refresh=<refresh_token>; Path=/; HttpOnly; SameSite=Lax; Expires=Sun, 30 Mar 2026 10:00:00 GMT
+```
+
+See: `server/router/api/v1/auth_service.go:64-189`
+
+**2. Authenticated Request:**
+
+```bash
+curl http://localhost:8081/api/v1/memos \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsImtpZCI6InYxIiwidHlwIjoiSldUIn0..."
+```
+
+**Authorization Header Format:**
+```
+Authorization: Bearer <access_token>
+```
+
+See: `server/router/api/v1/connect_interceptors.go:177-227`
+
+### Token Refresh Flow
+
+When the access token expires (after 15 minutes), refresh it without re-authenticating:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as Memos API
+    participant DB as Database
+    
+    Note over Client: Access token expired
+    
+    Client->>API: POST /api/v1/auth/refresh<br/>Cookie: memos_refresh=<token>
+    API->>API: Parse refresh token JWT
+    API->>DB: Validate token not revoked
+    DB-->>API: Token valid
+    API->>API: Generate new access token (15min)<br/>Generate new refresh token (30d)
+    API->>DB: Store new refresh token<br/>Remove old refresh token
+    API-->>Client: Set-Cookie: memos_refresh=<new_token><br/>Response: {access_token}
+    
+    Note over Client: Update access token in memory
+```
+
+**Refresh Request:**
+
+```bash
+curl -X POST http://localhost:8081/api/v1/auth/refresh \
+  -H "Cookie: memos_refresh=<refresh_token>" \
+  -c cookies.txt \
+  -b cookies.txt
+```
+
+**Response:**
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsImtpZCI6InYxIiwidHlwIjoiSldUIn0...",
+  "expiresAt": "2026-03-01T10:30:00Z"
+}
+```
+
+**Token Rotation:**
+Memos implements **refresh token rotation** for enhanced security:
+1. Client sends old refresh token
+2. Server validates old token
+3. Server generates new refresh token (fresh 30-day expiry)
+4. Server stores new token and removes old token
+5. Client receives new access token and new refresh token cookie
+
+This provides:
+- **Sliding window sessions** - Active users stay logged in indefinitely
+- **Better security** - Stolen refresh tokens become invalid after legitimate refresh
+
+See: `server/router/api/v1/auth_service.go:272-357`
+
+### Personal Access Token Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API as Memos API
+    participant DB as Database
+    
+    User->>API: POST /api/v1/users/123/personalAccessTokens<br/>{description, expires_in_days}
+    API->>API: Generate random token<br/>memos_pat_...
+    API->>API: Hash token (SHA-256)
+    API->>DB: Store token hash + metadata
+    API-->>User: {token: "memos_pat_..."}
+    
+    Note over User: Copy token (only shown once)
+    
+    User->>API: GET /api/v1/memos<br/>Authorization: Bearer memos_pat_...
+    API->>API: Detect PAT prefix
+    API->>API: Hash incoming token
+    API->>DB: Lookup by hash
+    DB-->>API: User + token metadata
+    API->>API: Check expiration
+    API->>DB: Update last_used_at (async)
+    API-->>User: 200 OK {memos: [...]}
+```
+
+**1. Create Personal Access Token:**
+
+```bash
+curl -X POST http://localhost:8081/api/v1/users/123/personalAccessTokens \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "GitHub Actions CI/CD",
+    "expiresInDays": 90
+  }'
+```
+
+**Response:**
+```json
+{
+  "personalAccessToken": {
+    "name": "users/123/personalAccessTokens/550e8400-e29b-41d4-a716-446655440000",
+    "description": "GitHub Actions CI/CD",
+    "createdAt": "2026-03-01T10:00:00Z",
+    "expiresAt": "2026-05-30T10:00:00Z"
+  },
+  "token": "memos_pat_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+}
+```
+
+<Warning>
+The token value is **only returned once** upon creation. Store it securely immediately. It cannot be retrieved later.
+</Warning>
+
+See: `server/router/api/v1/user_service.go` (CreatePersonalAccessToken)
+
+**2. Use PAT for Authentication:**
+
+```bash
+curl http://localhost:8081/api/v1/memos \
+  -H "Authorization: Bearer memos_pat_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+```
+
+**Authentication Logic:**
+```go
+// 1. Extract token from Authorization header
+token := ExtractBearerToken(authHeader)
+
+// 2. Detect PAT by prefix
+if strings.HasPrefix(token, "memos_pat_") {
+    // 3. Hash token for database lookup
+    tokenHash := sha256.Sum256([]byte(token))
+    
+    // 4. Query database by hash
+    result := store.GetUserByPATHash(ctx, tokenHash)
+    
+    // 5. Check expiration
+    if result.PAT.ExpiresAt != nil && result.PAT.ExpiresAt.Before(time.Now()) {
+        return errors.New("PAT expired")
+    }
+    
+    // 6. Update last_used_at (async)
+    go store.UpdatePATLastUsed(ctx, user.ID, result.PAT.TokenId)
+    
+    return result.User
+}
+```
+
+See: `server/auth/authenticator.go:101-124`
+
+**3. List Personal Access Tokens:**
+
+```bash
+curl http://localhost:8081/api/v1/users/123/personalAccessTokens \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response:**
+```json
+{
+  "personalAccessTokens": [
+    {
+      "name": "users/123/personalAccessTokens/550e8400-e29b-41d4-a716-446655440000",
+      "description": "GitHub Actions CI/CD",
+      "createdAt": "2026-03-01T10:00:00Z",
+      "expiresAt": "2026-05-30T10:00:00Z",
+      "lastUsedAt": "2026-03-15T14:30:00Z"
+    },
+    {
+      "name": "users/123/personalAccessTokens/660e8400-e29b-41d4-a716-446655440001",
+      "description": "Mobile App",
+      "createdAt": "2026-02-15T09:00:00Z",
+      "lastUsedAt": "2026-03-01T08:45:00Z"
+    }
+  ],
+  "totalSize": 2
+}
+```
+
+**4. Revoke Personal Access Token:**
+
+```bash
+curl -X DELETE http://localhost:8081/api/v1/users/123/personalAccessTokens/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response:**
+```json
+{}
+```
+
+The token is immediately revoked and subsequent API requests with it will fail with `401 Unauthenticated`.
+
+## Authentication Priority
+
+When multiple authentication methods are present, Memos authenticates in this order:
+
+1. **Access Token (V2)** - Check `Authorization: Bearer <token>` header
+   - If prefix is NOT `memos_pat_`, validate as JWT access token
+   - Stateless validation (signature check only)
+
+2. **Personal Access Token** - Check `Authorization: Bearer memos_pat_*` header
+   - If prefix is `memos_pat_`, hash and lookup in database
+   - Stateful validation (database query + expiration check)
+
+3. **Refresh Token** - Check `Cookie: memos_refresh=<token>`
+   - Used only for `/auth/refresh` endpoint
+   - Not used for general API authentication
+
+See: `server/auth/authenticator.go:136-165`
+
+## Security Best Practices
+
+### Token Storage
+
+<Accordion title="Access Tokens">
+  **DO:**
+  - Store in memory only (JavaScript variable)
+  - Clear on logout
+  - Implement automatic refresh before expiry
+  
+  **DON'T:**
+  - Never store in localStorage or sessionStorage
+  - Never store in cookies (use refresh token cookie instead)
+  - Never log tokens in console or analytics
+</Accordion>
+
+<Accordion title="Personal Access Tokens">
+  **DO:**
+  - Store in environment variables for scripts
+  - Use secrets manager for production (AWS Secrets Manager, HashiCorp Vault)
+  - Set appropriate expiration (30-90 days)
+  - Rotate regularly
+  - Use descriptive names ("GitHub Actions CI", "Mobile App")
+  
+  **DON'T:**
+  - Never commit to version control
+  - Never share tokens between services
+  - Never use the same token for multiple purposes
+  - Never set "never expires" for automated systems
+</Accordion>
+
+<Accordion title="Refresh Tokens">
+  **DO:**
+  - Rely on HttpOnly cookie (automatic handling)
+  - Implement token rotation (built-in)
+  - Clear on explicit logout
+  
+  **DON'T:**
+  - Never access cookie from JavaScript
+  - Never transmit in URL parameters
+  - Never store client-side beyond cookie
+</Accordion>
+
+### HTTPS Configuration
+
+<Warning>
+Always use HTTPS in production to protect tokens in transit. HTTP exposes tokens to network interception.
+</Warning>
+
+**Secure Cookie (HTTPS):**
+```
+Set-Cookie: memos_refresh=<token>; Path=/; HttpOnly; SameSite=Lax; Secure; Expires=...
+```
+
+**Non-Secure Cookie (HTTP):**
+```
+Set-Cookie: memos_refresh=<token>; Path=/; HttpOnly; SameSite=Lax; Expires=...
+```
+
+The `Secure` attribute is automatically added when the request origin is `https://`.
+
+See: `server/router/api/v1/auth_service.go:369-401`
+
+### Token Revocation
+
+**Refresh Tokens:**
+- Revoked on logout via `/api/v1/auth/signout`
+- Automatically rotated on refresh
+- Stored in `user_setting` table with expiration
+
+**Personal Access Tokens:**
+- Manually revoked via DELETE endpoint
+- Immediately invalidated (database removal)
+- Cannot be restored after revocation
+
+**Access Tokens:**
+- Cannot be revoked (stateless)
+- Short 15-minute lifetime minimizes risk
+- To "revoke" access, sign out to remove refresh token
+
+## Examples
+
+### Complete Authentication Example (curl)
+
+```bash
+#!/bin/bash
+BASE_URL="http://localhost:8081"
+USERNAME="demo"
+PASSWORD="secret"
+
+# 1. Sign in and get access token
+RESPONSE=$(curl -s -c cookies.txt -X POST "$BASE_URL/api/v1/auth/signin" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"passwordCredentials\": {
+      \"username\": \"$USERNAME\",
+      \"password\": \"$PASSWORD\"
+    }
+  }")
+
+ACCESS_TOKEN=$(echo $RESPONSE | jq -r '.accessToken')
+echo "Access Token: $ACCESS_TOKEN"
+
+# 2. Make authenticated request
+curl -s "$BASE_URL/api/v1/memos" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq
+
+# 3. Refresh token (after 15 minutes)
+curl -s -c cookies.txt -b cookies.txt -X POST "$BASE_URL/api/v1/auth/refresh" | jq
+
+# 4. Sign out
+curl -s -b cookies.txt -X POST "$BASE_URL/api/v1/auth/signout"
+```
+
+### Complete PAT Example (curl)
+
+```bash
+#!/bin/bash
+BASE_URL="http://localhost:8081"
+USER_ID="123"
+
+# 1. Create PAT (requires existing access token)
+RESPONSE=$(curl -s -X POST "$BASE_URL/api/v1/users/$USER_ID/personalAccessTokens" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "CI/CD Pipeline",
+    "expiresInDays": 90
+  }')
+
+PAT=$(echo $RESPONSE | jq -r '.token')
+echo "PAT: $PAT"
+echo "Save this token securely - it won't be shown again!"
+
+# 2. Use PAT for API requests (no expiry refresh needed)
+curl -s "$BASE_URL/api/v1/memos" \
+  -H "Authorization: Bearer $PAT" | jq
+
+# 3. List all PATs
+curl -s "$BASE_URL/api/v1/users/$USER_ID/personalAccessTokens" \
+  -H "Authorization: Bearer $PAT" | jq
+
+# 4. Revoke PAT when no longer needed
+PAT_ID="550e8400-e29b-41d4-a716-446655440000"
+curl -s -X DELETE "$BASE_URL/api/v1/users/$USER_ID/personalAccessTokens/$PAT_ID" \
+  -H "Authorization: Bearer $PAT"
+```
+
+### SSO Authentication Example
+
+```bash
+#!/bin/bash
+BASE_URL="http://localhost:8081"
+IDP_ID="1"
+AUTH_CODE="<authorization_code_from_oauth_provider>"
+REDIRECT_URI="http://localhost:3000/auth/callback"
+
+# Sign in with SSO
+curl -s -c cookies.txt -X POST "$BASE_URL/api/v1/auth/signin" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"ssoCredentials\": {
+      \"idpId\": $IDP_ID,
+      \"code\": \"$AUTH_CODE\",
+      \"redirectUri\": \"$REDIRECT_URI\"
+    }
+  }" | jq
+```
+
+See: `server/router/api/v1/auth_service.go:91-170`
+
+## Troubleshooting
+
+### "authentication required" (401)
+
+**Cause:** Missing or invalid authentication token
+
+**Solution:**
+```bash
+# Verify Authorization header format
+curl -v http://localhost:8081/api/v1/memos \
+  -H "Authorization: Bearer <token>"
+
+# Should see:
+# > Authorization: Bearer eyJhbGci...
+```
+
+### "invalid access token" (401)
+
+**Cause:** Expired, malformed, or revoked token
+
+**Solution:**
+```bash
+# Decode JWT to check expiration
+echo "<token>" | cut -d. -f2 | base64 -d | jq
+
+# Check exp (expiration) timestamp
+# If expired, refresh token:
+curl -X POST http://localhost:8081/api/v1/auth/refresh \
+  -b cookies.txt -c cookies.txt
+```
+
+### "refresh token not found" (401)
+
+**Cause:** Refresh token cookie not sent or expired
+
+**Solution:**
+```bash
+# Verify cookie exists
+curl -v http://localhost:8081/api/v1/auth/refresh \
+  -b cookies.txt -c cookies.txt
+
+# Should see:
+# > Cookie: memos_refresh=...
+
+# If missing, sign in again
+```
+
+### "PAT expired" (401)
+
+**Cause:** Personal Access Token past expiration date
+
+**Solution:**
+```bash
+# List PATs to check expiration
+curl http://localhost:8081/api/v1/users/123/personalAccessTokens \
+  -H "Authorization: Bearer <access_token>" | jq
+
+# Create new PAT if expired
+curl -X POST http://localhost:8081/api/v1/users/123/personalAccessTokens \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"description": "New Token", "expiresInDays": 90}'
+```
+
+### "permission denied" (403)
+
+**Cause:** Authenticated but insufficient permissions
+
+**Solution:**
+```bash
+# Check user role
+curl http://localhost:8081/api/v1/auth/me \
+  -H "Authorization: Bearer <token>" | jq '.user.role'
+
+# Admin operations require role: "ADMIN"
+# User operations require matching user ID
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="book" href="/api/reference">
+    Explore detailed endpoint documentation
+  </Card>
+  <Card title="SDKs & Libraries" icon="code" href="/api/sdks">
+    Use official SDKs for your programming language
+  </Card>
+</CardGroup>

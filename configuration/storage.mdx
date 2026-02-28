@@ -1,0 +1,517 @@
+---
+title: Storage Configuration
+description: Configure local filesystem and S3-compatible storage for attachments
+---
+
+Memos supports three storage backends for file attachments: Database (default), Local filesystem, and S3-compatible storage.
+
+## Storage Types
+
+Storage configuration is managed through the Admin panel or API, not environment variables.
+
+Source: `proto/store/instance_setting.proto:63-82`
+
+```protobuf
+message InstanceStorageSetting {
+  enum StorageType {
+    STORAGE_TYPE_UNSPECIFIED = 0;
+    DATABASE = 1;  // Store files in database (default)
+    LOCAL = 2;     // Store files on local filesystem
+    S3 = 3;        // Store files in S3-compatible storage
+  }
+  StorageType storage_type = 1;
+  string filepath_template = 2;  // e.g. "assets/{timestamp}_{filename}"
+  int64 upload_size_limit_mb = 3;
+  StorageS3Config s3_config = 4;
+}
+```
+
+## Database Storage (Default)
+
+The default storage type stores file attachments directly in the database as blobs.
+
+### Configuration
+
+No configuration required - this is the default behavior.
+
+### Advantages
+
+- Zero configuration
+- Single backup file (database includes everything)
+- Works with all database backends
+- Simple deployment
+
+### Disadvantages
+
+- Larger database size
+- Slower database backups
+- Limited scalability for large files
+
+### When to Use
+
+**Recommended for:**
+- Small deployments
+- Few attachments
+- Simple backup requirements
+
+**Not recommended for:**
+- High volume of large files
+- Video/media heavy usage
+- Large team deployments
+
+## Local Filesystem Storage
+
+Store attachments on the local filesystem instead of the database.
+
+### Configuration via API
+
+Source: `server/router/api/v1/instance_service.go:224-244`
+
+```bash
+curl -X PATCH https://your-instance/api/v1/instance/setting \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "storageSetting": {
+        "storageType": "LOCAL",
+        "filepathTemplate": "uploads/{date}/{filename}",
+        "uploadSizeLimitMb": 100
+      }
+    },
+    "updateMask": ["storage_setting"]
+  }'
+```
+
+### Filepath Template
+
+The `filepathTemplate` supports these placeholders:
+
+- `{timestamp}` - Unix timestamp (e.g., `1709251200`)
+- `{date}` - Date in YYYY-MM-DD format (e.g., `2024-03-01`)
+- `{filename}` - Original filename
+- `{uuid}` - Random UUID
+
+**Examples:**
+
+```bash
+# Organize by date
+uploads/{date}/{filename}
+# Result: uploads/2024-03-01/photo.jpg
+
+# Add timestamp prefix
+assets/{timestamp}_{filename}
+# Result: assets/1709251200_photo.jpg
+
+# Use UUID for uniqueness
+files/{uuid}
+# Result: files/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+# Nested structure
+storage/{date}/{timestamp}_{filename}
+# Result: storage/2024-03-01/1709251200_photo.jpg
+```
+
+Source: Test example at `store/test/instance_setting_test.go:207`
+
+### Storage Location
+
+Files are stored relative to `MEMOS_DATA` directory:
+
+```
+{MEMOS_DATA}/
+├── memos_prod.db
+└── uploads/
+    └── 2024-03-01/
+        ├── photo1.jpg
+        └── photo2.png
+```
+
+### Docker Volume Configuration
+
+```yaml
+version: '3'
+services:
+  memos:
+    image: neosmemo/memos:stable
+    ports:
+      - "5230:5230"
+    environment:
+      MEMOS_PORT: 5230
+      MEMOS_DATA: /var/opt/memos
+    volumes:
+      - ./memos:/var/opt/memos  # Database AND files
+    restart: unless-stopped
+```
+
+### Backup Strategy
+
+With local storage, you need to backup both database and files:
+
+```bash
+# Backup database
+sqlite3 /var/lib/memos/memos_prod.db ".backup /backup/db/memos.db"
+
+# Backup files
+rsync -av /var/lib/memos/uploads/ /backup/files/
+```
+
+### Advantages
+
+- Smaller database size
+- Faster database operations
+- Easy to browse files on disk
+- Better for large files
+
+### Disadvantages
+
+- Requires filesystem access
+- Two backup targets (db + files)
+- Not suitable for distributed deployments
+
+## S3-Compatible Storage
+
+Store attachments in S3 or S3-compatible storage (MinIO, Cloudflare R2, DigitalOcean Spaces, etc.).
+
+### S3 Configuration
+
+Source: `proto/store/instance_setting.proto:85-92`
+
+```protobuf
+message StorageS3Config {
+  string access_key_id = 1;
+  string access_key_secret = 2;
+  string endpoint = 3;
+  string region = 4;
+  string bucket = 5;
+  bool use_path_style = 6;
+}
+```
+
+### Configuration via API
+
+```bash
+curl -X PATCH https://your-instance/api/v1/instance/setting \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "storageSetting": {
+        "storageType": "S3",
+        "uploadSizeLimitMb": 500,
+        "s3Config": {
+          "accessKeyId": "YOUR_ACCESS_KEY",
+          "accessKeySecret": "YOUR_SECRET_KEY",
+          "endpoint": "https://s3.amazonaws.com",
+          "region": "us-east-1",
+          "bucket": "memos-attachments",
+          "usePathStyle": false
+        }
+      }
+    },
+    "updateMask": ["storage_setting"]
+  }'
+```
+
+### S3 Client Implementation
+
+Source: `plugin/storage/s3/s3.go:23-42`
+
+Memos uses AWS SDK v2 for S3 operations:
+
+```go
+func NewClient(ctx context.Context, s3Config *storepb.StorageS3Config) (*Client, error) {
+    cfg, err := config.LoadDefaultConfig(ctx,
+        config.WithCredentialsProvider(
+            credentials.NewStaticCredentialsProvider(
+                s3Config.AccessKeyId, 
+                s3Config.AccessKeySecret, 
+                ""
+            )
+        ),
+        config.WithRegion(s3Config.Region),
+    )
+    client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+        o.BaseEndpoint = aws.String(s3Config.Endpoint)
+        o.UsePathStyle = s3Config.UsePathStyle
+    })
+}
+```
+
+### AWS S3 Configuration
+
+```json
+{
+  "s3Config": {
+    "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+    "accessKeySecret": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    "endpoint": "https://s3.amazonaws.com",
+    "region": "us-east-1",
+    "bucket": "memos-attachments",
+    "usePathStyle": false
+  }
+}
+```
+
+### MinIO Configuration
+
+```json
+{
+  "s3Config": {
+    "accessKeyId": "minioadmin",
+    "accessKeySecret": "minioadmin",
+    "endpoint": "http://minio.example.com:9000",
+    "region": "us-east-1",
+    "bucket": "memos",
+    "usePathStyle": true
+  }
+}
+```
+
+<Warning>
+  MinIO requires `usePathStyle: true` for compatibility.
+</Warning>
+
+### Cloudflare R2 Configuration
+
+```json
+{
+  "s3Config": {
+    "accessKeyId": "your-r2-access-key-id",
+    "accessKeySecret": "your-r2-secret-access-key",
+    "endpoint": "https://your-account-id.r2.cloudflarestorage.com",
+    "region": "auto",
+    "bucket": "memos",
+    "usePathStyle": false
+  }
+}
+```
+
+### DigitalOcean Spaces Configuration
+
+```json
+{
+  "s3Config": {
+    "accessKeyId": "your-spaces-key",
+    "accessKeySecret": "your-spaces-secret",
+    "endpoint": "https://nyc3.digitaloceanspaces.com",
+    "region": "nyc3",
+    "bucket": "memos-attachments",
+    "usePathStyle": false
+  }
+}
+```
+
+### Backblaze B2 Configuration
+
+```json
+{
+  "s3Config": {
+    "accessKeyId": "your-application-key-id",
+    "accessKeySecret": "your-application-key",
+    "endpoint": "https://s3.us-west-002.backblazeb2.com",
+    "region": "us-west-002",
+    "bucket": "memos-attachments",
+    "usePathStyle": false
+  }
+}
+```
+
+### Presigned URLs
+
+Source: `plugin/storage/s3/s3.go:66-80`
+
+Memos generates presigned URLs for file access with 5-day expiration:
+
+```go
+func (c *Client) PresignGetObject(ctx context.Context, key string) (string, error) {
+    presignClient := s3.NewPresignClient(c.Client)
+    presignResult, err := presignClient.PresignGetObject(ctx, 
+        &s3.GetObjectInput{
+            Bucket: aws.String(*c.Bucket),
+            Key:    aws.String(key),
+        }, 
+        func(opts *s3.PresignOptions) {
+            opts.Expires = time.Duration(5 * 24 * time.Hour)
+        },
+    )
+    return presignResult.URL, nil
+}
+```
+
+This allows secure, temporary access to private S3 objects without making the bucket public.
+
+### S3 Operations
+
+Source: `plugin/storage/s3/s3.go`
+
+Memos implements these S3 operations:
+
+- **UploadObject** (`s3.go:45-63`) - Upload files with content type
+- **PresignGetObject** (`s3.go:66-80`) - Generate temporary download URLs
+- **GetObject** (`s3.go:83-94`) - Download files to memory
+- **GetObjectStream** (`s3.go:97-106`) - Stream files for large downloads
+- **DeleteObject** (`s3.go:109-118`) - Remove files
+
+### Docker Compose with MinIO
+
+```yaml
+version: '3'
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: memos
+    depends_on:
+      - minio
+    ports:
+      - "5230:5230"
+    environment:
+      MEMOS_PORT: 5230
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: memos-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+volumes:
+  minio_data:
+```
+
+After starting, configure Memos to use MinIO:
+
+1. Access MinIO console at `http://localhost:9001`
+2. Create bucket named `memos`
+3. Create access key/secret
+4. Configure Memos via API (see MinIO Configuration above)
+
+### Bucket Policy for Public Read
+
+If you want attachments to be publicly accessible (not recommended for private data):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::memos-attachments/*"
+    }
+  ]
+}
+```
+
+<Warning>
+  Memos uses presigned URLs by default, so public bucket access is NOT required. Only make buckets public if you specifically need direct URL access.
+</Warning>
+
+### Advantages
+
+- Unlimited scalability
+- Built-in redundancy
+- CDN integration
+- Works with distributed deployments
+- Offload storage from database server
+
+### Disadvantages
+
+- Additional service to manage (or cloud costs)
+- Network latency for uploads/downloads
+- Requires internet access (for cloud S3)
+- More complex backup strategy
+
+## Upload Size Limits
+
+The `uploadSizeLimitMb` setting applies to all storage types:
+
+```json
+{
+  "storageSetting": {
+    "uploadSizeLimitMb": 100  // 100 MB limit
+  }
+}
+```
+
+**Default:** No limit
+
+**Recommended values:**
+- Personal use: 50-100 MB
+- Team use: 100-500 MB
+- Media-heavy: 500-1000 MB
+
+## Storage Migration
+
+Changing storage type does NOT automatically migrate existing files.
+
+<Warning>
+  Existing attachments remain in the original storage location. Only new uploads use the new storage type. Plan migrations carefully or implement manual file migration.
+</Warning>
+
+## Performance Comparison
+
+| Storage Type | Upload Speed | Download Speed | Scalability | Complexity |
+|--------------|--------------|----------------|-------------|------------|
+| **Database** | Fast (local) | Fast (local) | Limited | Low |
+| **Local** | Fast (local) | Fast (local) | Medium | Low |
+| **S3** | Medium (network) | Fast (CDN) | Unlimited | Medium |
+
+## Troubleshooting
+
+### S3 Connection Failed
+
+```
+failed to create S3 client: ...
+```
+
+**Solutions:**
+- Verify endpoint URL is correct
+- Check access key and secret key
+- Ensure bucket exists
+- Verify region matches bucket region
+- Check network connectivity
+- For MinIO, set `usePathStyle: true`
+
+### Upload Size Exceeded
+
+```
+file size exceeds upload limit
+```
+
+**Solutions:**
+- Increase `uploadSizeLimitMb` setting
+- Compress files before upload
+- Use chunked upload for large files
+
+### Permission Denied (S3)
+
+```
+AccessDenied: Access Denied
+```
+
+**Solutions:**
+- Verify IAM user has `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` permissions
+- Check bucket policy allows access
+- Ensure credentials are correct
+
+### File Not Found (Local Storage)
+
+```
+no such file or directory
+```
+
+**Solutions:**
+- Verify `MEMOS_DATA` directory exists and is writable
+- Check filepath template is valid
+- Ensure volume mounts are correct (Docker)
+- Verify file permissions on storage directory

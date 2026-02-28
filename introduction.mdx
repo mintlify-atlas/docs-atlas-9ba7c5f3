@@ -1,0 +1,235 @@
+---
+title: "Welcome to Memos"
+description: "An open-source, self-hosted note-taking service. Your thoughts, your data, your control — no tracking, no ads, no subscription fees."
+---
+
+<img
+  className="block dark:hidden"
+  src="https://raw.githubusercontent.com/usememos/.github/refs/heads/main/assets/demo.png"
+  alt="Memos Interface"
+/>
+<img
+  className="hidden dark:block"
+  src="https://raw.githubusercontent.com/usememos/.github/refs/heads/main/assets/demo.png"
+  alt="Memos Interface"
+/>
+
+## What is Memos?
+
+Memos is a privacy-first, self-hosted knowledge base for personal notes, team wikis, and knowledge management. Built with Go and React, it runs as a single binary with minimal resource usage.
+
+Whether you're capturing quick thoughts, building a personal knowledge base, or sharing information with your team, Memos provides a clean, distraction-free environment for your content.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Privacy-First" icon="shield-halved">
+    Self-hosted on your infrastructure with zero telemetry, no tracking, and no ads. Your data never leaves your server.
+  </Card>
+  
+  <Card title="Markdown Native" icon="markdown">
+    Full markdown support with plain text storage. Your data is always portable and never locked in.
+  </Card>
+  
+  <Card title="Lightweight" icon="feather">
+    Single Go binary with React frontend. Low memory footprint (~50MB), starts in seconds.
+  </Card>
+  
+  <Card title="Easy Deployment" icon="rocket">
+    One-line Docker install. Supports SQLite, MySQL, and PostgreSQL databases.
+  </Card>
+  
+  <Card title="Developer-Friendly" icon="code">
+    Full REST and gRPC APIs. Connect RPC for browsers, gRPC-Gateway for external tools.
+  </Card>
+  
+  <Card title="Rich Content" icon="images">
+    Attachments, code blocks with syntax highlighting, task lists, tables, and more.
+  </Card>
+  
+  <Card title="Smart Organization" icon="tags">
+    Auto-extracted tags from `#hashtags`, pinned memos, visibility control (Public/Private/Protected).
+  </Card>
+  
+  <Card title="Clean Interface" icon="sparkles">
+    Minimal design with dark mode, mobile-responsive layout, and masonry view for visual organization.
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+Memos is built with modern technologies designed for performance and maintainability:
+
+<CodeGroup>
+```go Backend
+// Single Go binary server
+cmd/memos/
+├── main.go              # Entry point with Cobra CLI
+server/
+├── router/api/v1/       # gRPC + Connect RPC services
+├── auth/                # JWT + PAT authentication
+store/
+├── db/sqlite/           # SQLite (default)
+├── db/mysql/            # MySQL support
+└── db/postgres/         # PostgreSQL support
+```
+
+```typescript Frontend
+// React + TypeScript with Vite
+web/src/
+├── components/          # React components
+├── hooks/              # React Query hooks
+│   └── useMemoQueries.ts  # Memo CRUD operations
+├── contexts/           # Auth, View, Filter state
+└── types/proto/        # Generated from .proto files
+```
+
+```protobuf API
+// Protocol Buffers v2
+proto/api/v1/
+├── memo_service.proto   # Memo CRUD operations
+├── user_service.proto   # User management
+└── auth_service.proto   # Authentication
+```
+</CodeGroup>
+
+<Tip>
+  **Dual Protocol Design**: Memos uses Connect RPC for browser clients and gRPC-Gateway for REST compatibility, giving you type-safe APIs and HTTP/JSON support.
+</Tip>
+
+## Core Concepts
+
+### Memos
+
+A memo is a piece of content written in Markdown. Each memo has:
+
+- **Content**: Rich markdown with support for code blocks, tables, task lists, and more
+- **Visibility**: `PUBLIC` (anyone can view), `PROTECTED` (logged-in users), or `PRIVATE` (only you)
+- **Tags**: Automatically extracted from `#hashtags` in your content
+- **Attachments**: Images, videos, and files stored locally or in S3
+- **Relations**: Link memos together for knowledge graphs
+- **Properties**: Computed metadata (has links, has tasks, has code blocks)
+
+### Users & Authentication
+
+Memos supports multiple authentication methods:
+
+- **Password-based auth** with secure JWT access tokens (15-min expiration)
+- **Personal Access Tokens (PAT)** for API access and long-lived sessions
+- **SSO providers** via identity providers (OAuth2/OIDC)
+
+The first user created automatically becomes an **admin** with full system access.
+
+### Storage Options
+
+<Tabs>
+  <Tab title="SQLite">
+    **Default and recommended** for most users:
+    - Zero configuration
+    - Single file database
+    - Perfect for < 10,000 memos
+    - Automatic backups via file copy
+  </Tab>
+  
+  <Tab title="MySQL">
+    For larger deployments:
+    - Better concurrent write performance
+    - Familiar replication/backup tools
+    - Use when you need multi-server setup
+  </Tab>
+  
+  <Tab title="PostgreSQL">
+    Enterprise-grade option:
+    - Advanced indexing capabilities
+    - JSON query support
+    - Robust ecosystem
+  </Tab>
+</Tabs>
+
+## Getting Started
+
+Ready to start capturing your thoughts? Follow our quickstart guide:
+
+<Card
+  title="Quickstart Guide"
+  icon="rocket"
+  href="/quickstart"
+  horizontal
+>
+  Get Memos running with Docker in under 2 minutes
+</Card>
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Personal Knowledge Base" icon="brain">
+    Build your second brain with quick notes, bookmarks, code snippets, and learning resources. Auto-tagging and full-text search make retrieval effortless.
+  </Accordion>
+  
+  <Accordion title="Daily Journal" icon="book">
+    Capture thoughts throughout the day with timestamps. Private by default, share selectively with public links.
+  </Accordion>
+  
+  <Accordion title="Team Wiki" icon="users">
+    Collaborate with team members using protected memos. Share knowledge, document processes, and build institutional memory.
+  </Accordion>
+  
+  <Accordion title="Developer Notes" icon="terminal">
+    Store code snippets with syntax highlighting, document API endpoints, track bugs, and maintain dev logs.
+  </Accordion>
+  
+  <Accordion title="Content Drafting" icon="pen-to-square">
+    Write blog posts, articles, and documentation in Markdown. Export to your publishing platform when ready.
+  </Accordion>
+</AccordionGroup>
+
+## Community & Support
+
+<CardGroup cols={3}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/tfPJa4UmAv">
+    Join our community
+  </Card>
+  
+  <Card title="GitHub" icon="github" href="https://github.com/usememos/memos">
+    Star us and contribute
+  </Card>
+  
+  <Card title="Live Demo" icon="display" href="https://demo.usememos.com">
+    Try before you install
+  </Card>
+</CardGroup>
+
+## Open Source & Privacy
+
+Memos is fully open-source under the MIT License. We're committed to:
+
+- **No telemetry**: Zero data collection, no phone-home
+- **No tracking**: No analytics, no usage monitoring
+- **No ads**: Your attention is yours
+- **No subscriptions**: Free forever
+
+Your data stays on your infrastructure, under your control.
+
+<Note>
+  Read our full [Privacy Policy](https://usememos.com/privacy) and [Security practices](/security)
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Deploy Memos in under 2 minutes
+  </Card>
+  
+  <Card title="Installation Options" icon="download" href="/installation/docker">
+    Docker, Kubernetes, binaries, and more
+  </Card>
+  
+  <Card title="Configuration" icon="sliders" href="/configuration/environment-variables">
+    Environment variables and settings
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/introduction">
+    Build integrations with our API
+  </Card>
+</CardGroup>

@@ -1,0 +1,312 @@
+---
+title: Creating and Managing Memos
+description: Learn how to create, edit, organize, and manage your memos in Memos
+---
+
+Memos are the core unit of content in Memos. This guide covers everything you need to know about creating, editing, and managing your memos.
+
+## Creating a Memo
+
+### Quick Creation
+
+1. Navigate to your **Home** page
+2. Find the memo editor at the top of the page
+3. Type your content using Markdown formatting
+4. Click **Save** or press `Ctrl/Cmd + Enter`
+
+The editor supports:
+- Full Markdown syntax (headings, lists, code blocks, etc.)
+- Real-time preview
+- Auto-save drafts (cached locally)
+- Drag-and-drop file uploads
+
+### Editor Components
+
+<AccordionGroup>
+  <Accordion title="Content Editor">
+    The main textarea where you write your memo content. It supports:
+    - Markdown syntax highlighting
+    - Slash commands (type `/` for quick insertions)
+    - Tag suggestions (type `#` to see existing tags)
+    - Auto-complete for mentions and links
+  </Accordion>
+
+  <Accordion title="Toolbar Actions">
+    The toolbar provides quick access to:
+    - **Insert Menu**: Add links, images, code blocks, and more
+    - **Visibility Selector**: Control who can see your memo
+    - **Focus Mode**: Distraction-free writing
+    - **Location**: Add geographic coordinates to your memo
+  </Accordion>
+
+  <Accordion title="Metadata Options">
+    Configure additional memo properties:
+    - **Display Time**: When the memo appears in your timeline
+    - **Pinned Status**: Keep important memos at the top
+    - **Tags**: Organize with hashtags like `#work` or `#personal`
+    - **Relations**: Link to other memos for context
+  </Accordion>
+</AccordionGroup>
+
+## Visibility Levels
+
+Control who can access your memos with three visibility options:
+
+<CardGroup cols={3}>
+  <Card title="Private" icon="lock">
+    Only you can see this memo. Perfect for personal notes, drafts, and sensitive information.
+  </Card>
+  
+  <Card title="Protected" icon="shield">
+    Visible to all authenticated users on your instance. Great for team collaboration.
+  </Card>
+  
+  <Card title="Public" icon="globe">
+    Anyone with the link can view, even without logging in. Ideal for sharing knowledge publicly.
+  </Card>
+</CardGroup>
+
+<Note>
+Instance admins can disable public memos through system settings for increased privacy.
+</Note>
+
+## Editing Memos
+
+### Inline Editing
+
+1. Click the **Edit** button (pencil icon) on any memo
+2. Make your changes in the editor
+3. Save to update
+
+Changes are tracked with an `update_time` timestamp, and you can view edit history through the API.
+
+### Updating Properties
+
+You can modify memo properties without editing content:
+
+<Tabs>
+  <Tab title="Visibility">
+    Change visibility at any time by clicking the visibility icon and selecting a new level.
+  </Tab>
+  
+  <Tab title="Pinned Status">
+    Click the pin icon to toggle. Pinned memos always appear first in your timeline.
+  </Tab>
+  
+  <Tab title="Display Time">
+    Edit the display time to reorganize your timeline chronologically.
+  </Tab>
+</Tabs>
+
+## Organizing Memos
+
+### Using Tags
+
+Tags help categorize and filter your memos:
+
+```markdown
+Working on the new #feature for #project-alpha today.
+Need to discuss with #team tomorrow.
+```
+
+Tags are:
+- Automatically extracted from content
+- Case-sensitive (`#Work` and `#work` are different)
+- Support hyphens, underscores, and Unicode characters
+- Clickable for instant filtering
+
+### Pinning Important Memos
+
+Pin memos to keep them at the top of your timeline:
+
+1. Click the **pin icon** on any memo
+2. Pinned memos display with a pin indicator
+3. They always appear first, regardless of date
+
+### Archiving
+
+Archive old memos to declutter your main timeline:
+
+1. Click the **More** menu (three dots) on a memo
+2. Select **Archive**
+3. Access archived memos from the **Archived** page
+4. Restore by unarchiving when needed
+
+## Memo Properties
+
+Memos automatically track several properties:
+
+| Property | Description | API Field |
+|----------|-------------|----------|
+| Has Links | Contains markdown links | `property.has_link` |
+| Has Code | Contains code blocks or inline code | `property.has_code` |
+| Has Tasks | Contains task list items | `property.has_task_list` |
+| Has Incomplete Tasks | Has unchecked tasks | `property.has_incomplete_tasks` |
+
+These properties enable powerful filtering:
+
+```
+# Filter memos with incomplete tasks
+property.has_incomplete_tasks == true
+
+# Find all memos with code snippets
+property.has_code == true
+```
+
+## Comments and Reactions
+
+### Adding Comments
+
+1. Open a memo detail page
+2. Click **Write a comment**
+3. Type your comment and save
+4. Comments appear below the main memo
+
+Comments are full memos with a special parent relationship. They support all memo features including attachments and formatting.
+
+### Adding Reactions
+
+React to memos with emoji:
+
+1. Click the **reaction picker** (smiley icon)
+2. Select an emoji (e.g., 👍, ❤️, 😄)
+3. Your reaction appears with others'
+4. Click your reaction again to remove it
+
+Reactions are tracked per user and display with reaction counts.
+
+## Deleting Memos
+
+<Warning>
+Deleting a memo is permanent and cannot be undone.
+</Warning>
+
+To delete a memo:
+
+1. Click the **More** menu (three dots)
+2. Select **Delete**
+3. Confirm the deletion
+
+When you delete a memo:
+- All comments are also deleted
+- Reactions are removed
+- Attachments remain in storage (can be deleted separately)
+- Relations to other memos are cleared
+
+## API Integration
+
+Create and manage memos programmatically:
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://your-instance.com/api/v1/memos \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memo": {
+      "content": "My new memo with #tags",
+      "visibility": "PRIVATE"
+    }
+  }'
+```
+
+```javascript JavaScript
+import { createPromiseClient } from "@connectrpc/connect";
+import { createConnectTransport } from "@connectrpc/connect-web";
+import { MemoService } from "./gen/api/v1/memo_service_pb";
+
+const transport = createConnectTransport({
+  baseUrl: "https://your-instance.com",
+  credentials: "include",
+});
+
+const client = createPromiseClient(MemoService, transport);
+
+const memo = await client.createMemo({
+  memo: {
+    content: "My new memo with #tags",
+    visibility: "PRIVATE",
+  },
+});
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://your-instance.com/api/v1/memos",
+    headers={"Authorization": "Bearer YOUR_TOKEN"},
+    json={
+        "memo": {
+            "content": "My new memo with #tags",
+            "visibility": "PRIVATE"
+        }
+    }
+)
+
+memo = response.json()
+```
+</CodeGroup>
+
+### API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|----------|
+| `/api/v1/memos` | POST | Create a new memo |
+| `/api/v1/memos` | GET | List memos with filters |
+| `/api/v1/memos/{id}` | GET | Get a specific memo |
+| `/api/v1/memos/{id}` | PATCH | Update a memo |
+| `/api/v1/memos/{id}` | DELETE | Delete a memo |
+| `/api/v1/memos/{id}/comments` | POST | Add a comment |
+| `/api/v1/memos/{id}/comments` | GET | List comments |
+| `/api/v1/memos/{id}/reactions` | POST | Add a reaction |
+| `/api/v1/memos/{id}/reactions/{reaction}` | DELETE | Remove a reaction |
+
+<Card title="API Reference" icon="code" href="/api-reference/memo-service">
+  View the complete Memo Service API reference with all available fields and operations.
+</Card>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Organizing with Tags">
+    - Use consistent tag naming (e.g., `#meeting-notes` vs `#meeting_notes`)
+    - Create a tag hierarchy with slashes: `#work/project/feature`
+    - Limit tags to 3-5 per memo for clarity
+    - Review and consolidate duplicate tags periodically
+  </Accordion>
+
+  <Accordion title="Writing Effective Memos">
+    - Start with a clear headline or summary
+    - Use headings to structure longer memos
+    - Add context with links to related memos
+    - Include timestamps for time-sensitive information
+  </Accordion>
+
+  <Accordion title="Performance Tips">
+    - Keep individual memos under 10,000 characters
+    - Use attachments for large files instead of embedding
+    - Archive old memos to improve timeline load times
+    - Limit real-time collaboration to avoid conflicts
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Markdown Support" icon="markdown" href="/features/markdown-support">
+    Learn about supported Markdown syntax and formatting
+  </Card>
+  
+  <Card title="Attachments" icon="paperclip" href="/features/attachments">
+    Add images, files, and media to your memos
+  </Card>
+  
+  <Card title="Tags & Filters" icon="filter" href="/features/tags-and-filters">
+    Master advanced filtering and organization
+  </Card>
+  
+  <Card title="Shortcuts" icon="zap" href="/features/shortcuts">
+    Save custom filters for quick access
+  </Card>
+</CardGroup>

@@ -1,0 +1,662 @@
+---
+title: Using Shortcuts
+description: Save custom filters and keyboard shortcuts to boost your productivity in Memos
+---
+
+Shortcuts in Memos help you work faster by saving frequently used filters and providing keyboard shortcuts for common actions.
+
+## Filter Shortcuts
+
+Filter shortcuts save complex CEL expressions for instant access.
+
+### Creating a Shortcut
+
+<Steps>
+  <Step title="Open the Create Dialog">
+    Click the **+ New Shortcut** button in the sidebar (visible on Home page).
+  </Step>
+  
+  <Step title="Enter Title">
+    Choose a descriptive title. Emoji are supported and recommended:
+    
+    ```
+    💼 Work TODOs
+    ✅ Completed Tasks
+    👥 Team Updates
+    📊 Weekly Reports
+    ```
+  </Step>
+  
+  <Step title="Write Filter Expression">
+    Enter a CEL filter expression:
+    
+    ```cel
+    tag_search == "work" && property.has_incomplete_tasks == true
+    ```
+    
+    The filter is validated before saving.
+  </Step>
+  
+  <Step title="Save">
+    Click **Save** to create the shortcut. It appears immediately in your sidebar.
+  </Step>
+</Steps>
+
+### Using Shortcuts
+
+1. **Click** a shortcut in the sidebar
+2. Memos are filtered instantly
+3. The shortcut highlights to show it's active
+4. **Click again** to deactivate and clear the filter
+
+Shortcuts are exclusive - activating one deactivates others.
+
+### Managing Shortcuts
+
+<Tabs>
+  <Tab title="Edit">
+    Update existing shortcuts:
+    
+    1. Click the **menu icon** (three dots) next to the shortcut
+    2. Select **Edit**
+    3. Modify the title or filter
+    4. Save changes
+    
+    The shortcut updates immediately for all active sessions.
+  </Tab>
+  
+  <Tab title="Delete">
+    Remove shortcuts:
+    
+    1. Click the **menu icon** next to the shortcut
+    2. Select **Delete**
+    3. Confirm deletion
+    
+    <Warning>
+    Deleting a shortcut cannot be undone.
+    </Warning>
+  </Tab>
+  
+  <Tab title="Reorder">
+    Shortcuts display in creation order. To reorder:
+    
+    1. Delete and recreate in desired order, or
+    2. Use the API to manage shortcuts programmatically
+    
+    <Note>
+    Drag-and-drop reordering is planned for a future release.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Shortcut Examples
+
+Here are practical shortcut filters you can use:
+
+### Personal Productivity
+
+<AccordionGroup>
+  <Accordion title="✅ Today's TODOs">
+    Find incomplete tasks for today:
+    
+    ```cel
+    property.has_incomplete_tasks == true
+    ```
+  </Accordion>
+  
+  <Accordion title="🔥 High Priority">
+    Find urgent and high-priority items:
+    
+    ```cel
+    tag_search == "urgent" || tag_search == "high-priority"
+    ```
+  </Accordion>
+  
+  <Accordion title="📌 Pinned Items">
+    Show only pinned memos:
+    
+    ```cel
+    pinned == true
+    ```
+  </Accordion>
+  
+  <Accordion title="📅 This Week">
+    Memos from the current week:
+    
+    ```cel
+    create_time > timestamp("2024-01-20T00:00:00Z")
+    ```
+    
+    <Note>
+    Update the timestamp each week, or use relative timestamps if your implementation supports them.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+### Work & Projects
+
+<AccordionGroup>
+  <Accordion title="💼 Work Items">
+    All work-related memos:
+    
+    ```cel
+    tag_search == "work" || tag_search.startsWith("work/")
+    ```
+  </Accordion>
+  
+  <Accordion title="🚀 Active Projects">
+    Memos for active projects:
+    
+    ```cel
+    (tag_search == "project/alpha" || tag_search == "project/beta") &&
+    !(tag_search == "archived")
+    ```
+  </Accordion>
+  
+  <Accordion title="👥 Team Updates">
+    Team-related memos and meetings:
+    
+    ```cel
+    tag_search == "team" || tag_search == "meeting" || tag_search == "standup"
+    ```
+  </Accordion>
+  
+  <Accordion title="📝 Meeting Notes">
+    All meeting notes:
+    
+    ```cel
+    tag_search == "meeting" || tag_search == "meeting-notes"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Learning & Knowledge
+
+<AccordionGroup>
+  <Accordion title="📚 Reading List">
+    Memos with links to read:
+    
+    ```cel
+    tag_search == "reading" && property.has_link == true
+    ```
+  </Accordion>
+  
+  <Accordion title="💻 Code Snippets">
+    Memos containing code:
+    
+    ```cel
+    property.has_code == true
+    ```
+  </Accordion>
+  
+  <Accordion title="🎓 Learning">
+    Educational content and tutorials:
+    
+    ```cel
+    tag_search == "learning" || tag_search == "tutorial" || tag_search == "til"
+    ```
+  </Accordion>
+  
+  <Accordion title="🔗 Resource Collection">
+    Public memos with links:
+    
+    ```cel
+    visibility == "PUBLIC" && property.has_link == true
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Content Types
+
+<AccordionGroup>
+  <Accordion title="✔️ Task Lists">
+    All memos with task lists:
+    
+    ```cel
+    property.has_task_list == true
+    ```
+  </Accordion>
+  
+  <Accordion title="🔒 Private Notes">
+    Your private memos only:
+    
+    ```cel
+    visibility == "PRIVATE"
+    ```
+  </Accordion>
+  
+  <Accordion title="🌐 Public Posts">
+    Publicly shared content:
+    
+    ```cel
+    visibility == "PUBLIC"
+    ```
+  </Accordion>
+  
+  <Accordion title="📸 With Images">
+    Memos with attachments (approximate via tags):
+    
+    ```cel
+    tag_search == "image" || tag_search == "photo"
+    ```
+    
+    <Note>
+    Direct attachment filtering is not yet exposed in CEL. Tag images for now.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Keyboard Shortcuts
+
+Boost productivity with keyboard shortcuts in the editor.
+
+### Editor Shortcuts
+
+<Tabs>
+  <Tab title="Mac">
+    | Action | Shortcut |
+    |--------|----------|
+    | **Save memo** | `Cmd + Enter` |
+    | **Bold text** | `Cmd + B` |
+    | **Italic text** | `Cmd + I` |
+    | **Insert link** | `Cmd + K` |
+    | **Insert code** | `Cmd + E` |
+    | **Toggle focus mode** | `Cmd + Shift + F` |
+    | **Cancel editing** | `Esc` |
+  </Tab>
+  
+  <Tab title="Windows/Linux">
+    | Action | Shortcut |
+    |--------|----------|
+    | **Save memo** | `Ctrl + Enter` |
+    | **Bold text** | `Ctrl + B` |
+    | **Italic text** | `Ctrl + I` |
+    | **Insert link** | `Ctrl + K` |
+    | **Insert code** | `Ctrl + E` |
+    | **Toggle focus mode** | `Ctrl + Shift + F` |
+    | **Cancel editing** | `Esc` |
+  </Tab>
+</Tabs>
+
+### Slash Commands
+
+Type `/` in the editor to access quick insertions:
+
+| Command | Output | Use Case |
+|---------|--------|----------|
+| `/code` | ` ```\n\n``` ` | Insert fenced code block |
+| `/table` | Markdown table template | Create a table structure |
+| `/todo` | `- [ ] ` | Start a task list |
+| `/divider` | `---` | Insert horizontal rule |
+
+**Using slash commands:**
+
+1. Type `/` in the editor
+2. See available commands
+3. Type command name or use arrow keys
+4. Press `Enter` to insert
+5. Cursor automatically positions for editing
+
+### Navigation Shortcuts
+
+<Note>
+Global keyboard navigation is planned but not yet implemented.
+</Note>
+
+Current navigation:
+- Use `Tab` to move between UI elements
+- Use arrow keys in suggestions and menus
+- Use `Enter` to confirm selections
+- Use `Esc` to close dialogs and menus
+
+## API Usage
+
+### Create Shortcut
+
+<CodeGroup>
+```javascript JavaScript
+import { createPromiseClient } from "@connectrpc/connect";
+import { createConnectTransport } from "@connectrpc/connect-web";
+import { ShortcutService } from "./gen/api/v1/shortcut_service_pb";
+
+const client = createPromiseClient(ShortcutService, transport);
+
+const shortcut = await client.createShortcut({
+  parent: "users/123", // Your user resource name
+  shortcut: {
+    title: "💼 Work TODOs",
+    filter: 'tag_search == "work" && property.has_incomplete_tasks == true',
+  },
+});
+
+console.log("Created:", shortcut.name);
+// Output: "users/123/shortcuts/abc-def-ghi"
+```
+
+```bash cURL
+curl -X POST https://your-instance.com/api/v1/users/123/shortcuts \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "shortcut": {
+      "title": "💼 Work TODOs",
+      "filter": "tag_search == \"work\" && property.has_incomplete_tasks == true"
+    }
+  }'
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://your-instance.com/api/v1/users/123/shortcuts",
+    headers={"Authorization": "Bearer YOUR_TOKEN"},
+    json={
+        "shortcut": {
+            "title": "💼 Work TODOs",
+            "filter": 'tag_search == "work" && property.has_incomplete_tasks == true'
+        }
+    }
+)
+
+shortcut = response.json()
+print(shortcut["name"])
+```
+</CodeGroup>
+
+### List Shortcuts
+
+```javascript
+const response = await client.listShortcuts({
+  parent: "users/123",
+});
+
+for (const shortcut of response.shortcuts) {
+  console.log(`${shortcut.title}: ${shortcut.filter}`);
+}
+
+// Output:
+// 💼 Work TODOs: tag_search == "work" && property.has_incomplete_tasks == true
+// ✅ Completed: property.has_task_list == true && !property.has_incomplete_tasks
+```
+
+### Update Shortcut
+
+```javascript
+import { create } from "@bufbuild/protobuf";
+import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
+
+await client.updateShortcut({
+  shortcut: {
+    name: "users/123/shortcuts/abc-def-ghi",
+    title: "🔥 Urgent Work", // Updated title
+    filter: 'tag_search == "work" && tag_search == "urgent"', // Updated filter
+  },
+  updateMask: create(FieldMaskSchema, {
+    paths: ["title", "filter"],
+  }),
+});
+```
+
+### Delete Shortcut
+
+```javascript
+await client.deleteShortcut({
+  name: "users/123/shortcuts/abc-def-ghi",
+});
+
+console.log("Shortcut deleted");
+```
+
+### Validate Filter
+
+Test a filter without creating:
+
+```javascript
+try {
+  await client.createShortcut({
+    parent: "users/123",
+    shortcut: {
+      title: "Test",
+      filter: 'tag_search == "work"',
+    },
+    validateOnly: true, // Don't actually create
+  });
+  console.log("✓ Filter is valid");
+} catch (error) {
+  console.error("✗ Invalid filter:", error.message);
+}
+```
+
+## Advanced Techniques
+
+### Combining Multiple Tags
+
+Create shortcuts for tag combinations:
+
+```cel
+# Any of multiple tags (OR)
+tag_search == "work" || tag_search == "project" || tag_search == "client"
+
+# All tags must match (AND)
+# Note: Single memo can't have multiple tag_search values simultaneously
+# Use hierarchical tags instead: #work/project/client
+tag_search == "work/project/client"
+```
+
+### Date-Based Shortcuts
+
+```cel
+# This quarter (Q1 2024)
+create_time >= timestamp("2024-01-01T00:00:00Z") &&
+create_time < timestamp("2024-04-01T00:00:00Z")
+
+# This year
+create_time >= timestamp("2024-01-01T00:00:00Z")
+
+# Older than 90 days
+create_time < timestamp("2023-10-27T00:00:00Z")
+```
+
+<Note>
+Update timestamps periodically, or build a tool to generate dynamic shortcuts.
+</Note>
+
+### Complex Workflows
+
+Chain filters for advanced workflows:
+
+```cel
+# Sprint planning: Incomplete work items not blocked
+tag_search.startsWith("sprint/") && 
+property.has_incomplete_tasks == true &&
+!(tag_search == "blocked")
+
+# Review queue: Public posts with links for review
+visibility == "PUBLIC" &&
+property.has_link == true &&
+tag_search == "review"
+
+# Archive candidates: Old completed tasks
+property.has_task_list == true &&
+!property.has_incomplete_tasks &&
+create_time < timestamp("2023-01-01T00:00:00Z")
+```
+
+### Sharing Shortcuts
+
+Shortcuts are per-user but filters are portable:
+
+1. Export your filter expressions
+2. Share with teammates
+3. They recreate shortcuts with same filters
+4. Team maintains consistent filtering
+
+**Team filter library example:**
+
+```javascript
+const teamFilters = {
+  "Work TODOs": 'tag_search == "work" && property.has_incomplete_tasks == true',
+  "Team Updates": 'tag_search == "team" || tag_search == "meeting"',
+  "Code Reviews": 'tag_search == "code-review" && property.has_link == true',
+};
+
+// Create for current user
+for (const [title, filter] of Object.entries(teamFilters)) {
+  await client.createShortcut({
+    parent: currentUser.name,
+    shortcut: { title, filter },
+  });
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Naming Shortcuts">
+    - Use emoji for visual scanning
+    - Keep titles under 20 characters
+    - Use action words: "Review", "Update", "Check"
+    - Group related shortcuts with emoji families
+    
+    **Good:**
+    - ✅ Complete Tasks
+    - 🔄 In Progress
+    - ⏸️ Blocked
+    
+    **Bad:**
+    - Tasks that are complete
+    - WIP Items
+    - Stuff I can't do yet
+  </Accordion>
+  
+  <Accordion title="Filter Design">
+    - Start simple, refine over time
+    - Test filters before saving
+    - Document complex logic in memo
+    - Use shortcuts for 2+ filter combinations
+    - One-off filters don't need shortcuts
+  </Accordion>
+  
+  <Accordion title="Organization">
+    - Limit to 5-10 shortcuts
+    - Delete unused shortcuts
+    - Order by frequency of use
+    - Group by workflow (work, personal, projects)
+    - Review and update quarterly
+  </Accordion>
+  
+  <Accordion title="Performance">
+    - Specific filters are faster than broad ones
+    - Use indexed fields (tags, visibility)
+    - Avoid expensive operations in filters
+    - Test shortcuts with large datasets
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Filter Not Working">
+    **Symptoms:**
+    - No memos shown
+    - Wrong memos displayed
+    - Error message
+    
+    **Solutions:**
+    1. Validate filter syntax
+    2. Check field names (case-sensitive)
+    3. Verify timestamps format
+    4. Test filter components individually
+    5. Review server logs for validation errors
+  </Accordion>
+  
+  <Accordion title="Shortcut Not Saving">
+    **Causes:**
+    - Invalid filter expression
+    - Empty title or filter
+    - Network error
+    - Permission issue
+    
+    **Solutions:**
+    - Validate filter first
+    - Check browser console
+    - Verify authentication
+    - Try simpler filter
+  </Accordion>
+  
+  <Accordion title="Performance Issues">
+    **Symptoms:**
+    - Slow filter application
+    - Timeout errors
+    - UI lag
+    
+    **Solutions:**
+    - Simplify filter logic
+    - Add more specific conditions
+    - Use tag filters instead of content search
+    - Paginate results
+    - Check database indexes
+  </Accordion>
+</AccordionGroup>
+
+## Tips & Tricks
+
+<CardGroup cols={2}>
+  <Card title="Quick Tags" icon="hashtag">
+    Create shortcuts for your most-used tags to avoid typing:
+    
+    ```cel
+    tag_search == "meeting"
+    tag_search == "work"
+    tag_search == "personal"
+    ```
+  </Card>
+  
+  <Card title="Smart Archives" icon="archive">
+    Find old completed items for archiving:
+    
+    ```cel
+    !property.has_incomplete_tasks &&
+    create_time < timestamp("2023-01-01T00:00:00Z")
+    ```
+  </Card>
+  
+  <Card title="Review Queue" icon="eye">
+    Items needing review:
+    
+    ```cel
+    tag_search == "review" ||
+    (tag_search == "draft" && visibility == "PRIVATE")
+    ```
+  </Card>
+  
+  <Card title="Today's Focus" icon="target">
+    High-priority incomplete tasks:
+    
+    ```cel
+    (tag_search == "urgent" || pinned == true) &&
+    property.has_incomplete_tasks == true
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tags & Filters" icon="filter" href="/features/tags-and-filters">
+    Learn CEL filter syntax and advanced filtering
+  </Card>
+  
+  <Card title="Creating Memos" icon="pen" href="/features/memos">
+    Master memo creation and organization
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api-reference/shortcut-service">
+    Full shortcut API documentation
+  </Card>
+  
+  <Card title="Productivity Guide" icon="zap" href="/guides/productivity">
+    Workflows and productivity tips
+  </Card>
+</CardGroup>

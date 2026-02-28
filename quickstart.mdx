@@ -1,80 +1,483 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get Memos running with Docker in under 2 minutes and create your first memo"
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
+This guide will help you:
 
-### Step 1: Set up your local environment
+1. Deploy Memos using Docker
+2. Create your admin account
+3. Write your first memo
+4. Explore key features
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Note>
+  **Prerequisites**: Docker installed on your system. [Get Docker →](https://docs.docker.com/get-docker/)
+</Note>
+
+## Step 1: Deploy with Docker
+
+<Steps>
+  <Step title="Run the Docker container">
+    Execute this single command to start Memos:
+
+    ```bash
+    docker run -d \
+      --name memos \
+      -p 5230:5230 \
+      -v ~/.memos:/var/opt/memos \
+      neosmemo/memos:stable
+    ```
+
+    **What this does:**
+    - `-d`: Run in detached mode (background)
+    - `--name memos`: Name the container for easy management
+    - `-p 5230:5230`: Expose Memos on port 5230
+    - `-v ~/.memos:/var/opt/memos`: Persist data to `~/.memos` on your host
+    - `neosmemo/memos:stable`: Use the stable release
+
+    <Tip>
+      **Data location**: All your memos, attachments, and database are stored in `~/.memos`. Back up this directory to preserve your data.
+    </Tip>
+  </Step>
+
+  <Step title="Verify it's running">
+    Check the container status:
+
+    ```bash
+    docker logs memos
+    ```
+
+    You should see output like:
+
+    ```
+    Memos 0.28.0 started successfully!
+    Data directory: /var/opt/memos
+    Database driver: sqlite
+    Server running on port 5230
+    Access your memos at: http://localhost:5230
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    Happy note-taking!
+    ```
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Open Memos in your browser">
+    Navigate to [http://localhost:5230](http://localhost:5230)
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
+    You'll see the setup screen for creating your first user.
+  </Step>
+</Steps>
+
+<Accordion title="Using Docker Compose instead?">
+  Create a `docker-compose.yml` file:
+
+  ```yaml docker-compose.yml
+  version: '3'
+  
+  services:
+    memos:
+      image: neosmemo/memos:stable
+      container_name: memos
+      ports:
+        - "5230:5230"
+      volumes:
+        - ~/.memos:/var/opt/memos
+      restart: unless-stopped
+      environment:
+        # Optional: Set timezone
+        - TZ=America/New_York
+  ```
+
+  Then run:
+  ```bash
+  docker-compose up -d
+  ```
 </Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Step 2: Create Your Account
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Sign up as the first user">
+    The first user created automatically becomes an **admin** with full system permissions.
 
-### Step 3: Go live
+    Fill in the registration form:
+    - **Username**: Your login username (alphanumeric, 4-32 characters)
+    - **Password**: Strong password (min 8 characters recommended)
+    - **Display Name**: How your name appears in memos (optional)
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    <Warning>
+      **Important**: After the first user is created, public registration is **disabled by default**. You can enable it later in Settings → General → Allow user registration.
+    </Warning>
+  </Step>
 
-## Next steps
+  <Step title="Sign in">
+    After registration, you'll be automatically signed in and redirected to the home screen.
 
-Now that you have your docs running, explore these key features:
+    <img src="/images/first-login.png" alt="Memos home screen" />
+  </Step>
+</Steps>
+
+## Step 3: Create Your First Memo
+
+<Steps>
+  <Step title="Open the memo editor">
+    At the top of the home screen, you'll see a text area with the placeholder: **"Any thoughts..."**
+
+    Click to focus the editor. This is where you'll write your memos in Markdown.
+  </Step>
+
+  <Step title="Write your memo">
+    Try this example to see Memos' features in action:
+
+    ````markdown
+    # Welcome to Memos! 👋
+
+    This is my first memo. Let me test some features:
+
+    ## Task List
+    - [x] Install Memos
+    - [ ] Write my first memo
+    - [ ] Explore tags and attachments
+
+    ## Tags
+    I can use #tags to organize my thoughts. Tags like #productivity and #learning are automatically extracted.
+
+    ## Code Blocks
+    ```javascript
+    // Syntax highlighting works great!
+    console.log('Hello from Memos!');
+    ```
+
+    ## Links and Resources
+    Check out the [documentation](https://usememos.com/docs) for more features.
+
+    > **Note**: This memo is set to PRIVATE by default, so only I can see it.
+    ````
+
+    <Tip>
+      **Markdown support**: Memos supports full GitHub-flavored Markdown including tables, footnotes, and even Mermaid diagrams!
+    </Tip>
+  </Step>
+
+  <Step title="Set visibility">
+    Before posting, choose who can see your memo:
+
+    <Tabs>
+      <Tab title="PRIVATE">
+        **Default setting**
+        - Only visible to you
+        - Perfect for personal notes, drafts, and sensitive information
+        - Most commonly used visibility setting
+      </Tab>
+
+      <Tab title="PROTECTED">
+        - Visible to all logged-in users
+        - Great for team knowledge sharing
+        - Requires authentication to view
+      </Tab>
+
+      <Tab title="PUBLIC">
+        - Visible to anyone with the link
+        - No authentication required
+        - Useful for public documentation or sharing specific notes
+
+        <Warning>
+          Your instance must have public visibility enabled (it's allowed by default).
+        </Warning>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Post your memo">
+    Click the **"POST"** button or press `Ctrl+Enter` (or `Cmd+Enter` on Mac).
+
+    Your memo appears in the timeline below! 🎉
+  </Step>
+</Steps>
+
+<Frame>
+  <img src="/images/memo-example.png" alt="Example memo with features" />
+</Frame>
+
+## Step 4: Explore Key Features
 
 <CardGroup cols={2}>
+  <Card title="Add Attachments" icon="paperclip">
+    Click the **📎 attachment icon** in the editor toolbar to upload:
+    - Images (auto-embedded in memo)
+    - Videos, PDFs, documents
+    - Any file type up to your configured limit
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    Files are stored in your data directory by default.
+  </Card>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+  <Card title="Use Tags" icon="tags">
+    Type `#tagname` anywhere in your content:
+    ```markdown
+    Working on the #backend refactor today.
+    Adding #typescript support.
+    ```
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+    Tags are automatically extracted and appear in the left sidebar for quick filtering.
+  </Card>
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+  <Card title="Pin Important Memos" icon="thumbtack">
+    Click the **📌 pin icon** on any memo to keep it at the top of your timeline.
 
+    Perfect for:
+    - Daily task lists
+    - Important references
+    - Active projects
+  </Card>
+
+  <Card title="Search & Filter" icon="filter">
+    Use the search bar to find memos by:
+    - Content (full-text search)
+    - Tags (click any tag)
+    - Date ranges
+    - Visibility level
+
+    Advanced filters available via the filter icon.
+  </Card>
+
+  <Card title="Code Snippets" icon="code">
+    Store code with syntax highlighting:
+
+    ````markdown
+    ```python
+    def fibonacci(n):
+        return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)
+    ```
+    ````
+
+    Supports 150+ languages!
+  </Card>
+
+  <Card title="Dark Mode" icon="moon">
+    Click your profile avatar → **Settings** → **Appearance**
+
+    Choose from:
+    - Light theme
+    - Dark theme
+    - System preference (auto-switches)
+  </Card>
+</CardGroup>
+
+## Advanced Features
+
+<AccordionGroup>
+  <Accordion title="Memo Relations" icon="link">
+    Create connections between memos:
+
+    ```markdown
+    Related to memo: memos/42
+    ```
+
+    Or use the relations editor when editing a memo. Great for building knowledge graphs!
+  </Accordion>
+
+  <Accordion title="Task Management" icon="list-check">
+    Track tasks across all your memos:
+
+    1. Use `- [ ]` for tasks in your memos
+    2. Click tasks to toggle completion
+    3. View all tasks in sidebar → **Tasks** view
+    4. Filter by incomplete/complete
+
+    ```markdown
+    ## Today's Tasks
+    - [x] Review PRs
+    - [ ] Write documentation
+    - [ ] Deploy to production
+    ```
+  </Accordion>
+
+  <Accordion title="Mermaid Diagrams" icon="diagram-project">
+    Create flowcharts, sequence diagrams, and more:
+
+    ````markdown
+    ```mermaid
+    graph TD
+        A[Start] --> B{Is it working?}
+        B -->|Yes| C[Great!]
+        B -->|No| D[Debug it]
+        D --> B
+    ```
+    ````
+
+    Renders as an interactive diagram in your memo!
+  </Accordion>
+
+  <Accordion title="RSS Feeds" icon="rss">
+    Subscribe to your memos via RSS:
+
+    - Personal feed: `http://localhost:5230/u/your-username/rss.xml`
+    - Public memos only: `http://localhost:5230/explore/rss.xml`
+
+    Perfect for reading memos in your favorite RSS reader!
+  </Accordion>
+
+  <Accordion title="API Access" icon="terminal">
+    Integrate with other tools using the API:
+
+    ```bash
+    # Get your access token from Settings → Access Tokens
+    export MEMOS_TOKEN="your-token-here"
+
+    # Create a memo via API
+    curl -X POST http://localhost:5230/api/v1/memos \
+      -H "Authorization: Bearer $MEMOS_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "memo": {
+          "content": "Created via API!",
+          "visibility": "PRIVATE"
+        }
+      }'
+    ```
+
+    See our [API Reference](/api/introduction) for full documentation.
+  </Accordion>
+</AccordionGroup>
+
+## Keyboard Shortcuts
+
+<Tip>
+  **Power user tip**: Master these shortcuts to write memos faster!
+</Tip>
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Enter` (or `Cmd+Enter`) | Post current memo |
+| `Escape` | Clear editor |
+| `Ctrl+K` | Focus search |
+| `/` | Focus memo editor |
+| `Ctrl+B` | Bold text |
+| `Ctrl+I` | Italic text |
+| `Ctrl+L` | Insert link |
+
+## Common Configuration
+
+<Steps>
+  <Step title="Change default visibility">
+    Navigate to: **Settings** → **Preferences** → **Default memo visibility**
+
+    Choose PRIVATE, PROTECTED, or PUBLIC as your default when creating memos.
+  </Step>
+
+  <Step title="Enable user registration">
+    As an admin: **Settings** → **General** → **Allow user registration**
+
+    Enable this to let others create accounts on your instance.
+  </Step>
+
+  <Step title="Configure storage">
+    **Settings** → **Storage** → Choose between:
+    - **Local storage** (default): Files stored in data directory
+    - **S3-compatible**: Use AWS S3, MinIO, Cloudflare R2, etc.
+
+    ```bash
+    # Configure S3 via environment variables
+    docker run -d \
+      --name memos \
+      -p 5230:5230 \
+      -v ~/.memos:/var/opt/memos \
+      -e MEMOS_DRIVER=postgres \
+      -e MEMOS_DSN="postgres://user:pass@localhost/memos" \
+      neosmemo/memos:stable
+    ```
+  </Step>
+</Steps>
+
+## Backup Your Data
+
+<Warning>
+  **Important**: Always backup your data directory before upgrades!
+</Warning>
+
+```bash
+# Stop the container
+docker stop memos
+
+# Backup data directory
+tar -czf memos-backup-$(date +%Y%m%d).tar.gz ~/.memos/
+
+# Restart container
+docker start memos
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Can't access http://localhost:5230">
+    **Check if container is running:**
+    ```bash
+    docker ps | grep memos
+    ```
+
+    **Check logs for errors:**
+    ```bash
+    docker logs memos
+    ```
+
+    **Port already in use?** Change the host port:
+    ```bash
+    docker run -d --name memos -p 8080:5230 -v ~/.memos:/var/opt/memos neosmemo/memos:stable
+    ```
+    Then access at `http://localhost:8080`
+  </Accordion>
+
+  <Accordion title="Lost admin password">
+    Reset password via command line:
+
+    ```bash
+    docker exec -it memos /usr/local/memos/memos \
+      --data /var/opt/memos \
+      --admin-password-reset
+    ```
+  </Accordion>
+
+  <Accordion title="Permission errors">
+    Ensure the data directory is writable:
+
+    ```bash
+    mkdir -p ~/.memos
+    chmod 755 ~/.memos
+    ```
+  </Accordion>
+
+  <Accordion title="Database migration failed">
+    If upgrading from old version:
+
+    1. Backup your data first!
+    2. Check minimum version requirement in release notes
+    3. Memos requires version 0.22+ for migrations
+
+    See [Upgrade Guide](#upgrading) for details.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Production Deployment" icon="server" href="/installation/docker-compose">
+    Deploy with PostgreSQL, HTTPS, and backups
+  </Card>
+
+  <Card title="Configure SSO" icon="key" href="/configuration/authentication">
+    Set up OAuth2/OIDC authentication
+  </Card>
+
+  <Card title="API Integration" icon="webhook" href="/api/introduction">
+    Build automations and integrations
+  </Card>
+
+  <Card title="Mobile Apps" icon="mobile" href="/features/explore-and-sharing">
+    Access Memos on iOS and Android
+  </Card>
 </CardGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  **Need help?** Join our [Discord community](https://discord.gg/tfPJa4UmAv) or check out [GitHub Discussions](https://github.com/usememos/memos/discussions).
 </Note>

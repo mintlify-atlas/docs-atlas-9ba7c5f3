@@ -1,0 +1,383 @@
+---
+title: Webhooks
+description: Integrate Memos with external services using webhooks
+icon: webhook
+---
+
+Webhooks allow you to receive HTTP POST notifications when specific events occur in Memos. Each user can configure their own webhooks to integrate with external services.
+
+## Overview
+
+Memos sends webhook notifications for memo-related events:
+
+- **memo.created** - Triggered when a new memo is created
+- **memo.updated** - Triggered when a memo is updated
+- **memo.deleted** - Triggered when a memo is deleted
+
+Webhooks are dispatched asynchronously and include the full memo object with the event.
+
+## Webhook Payload
+
+All webhook requests are sent as HTTP POST with `Content-Type: application/json`.
+
+### Request Structure
+
+```json
+{
+  "url": "https://your-endpoint.com/webhook",
+  "activityType": "memos.memo.created",
+  "creator": "users/123",
+  "memo": {
+    "name": "memos/abc123",
+    "uid": "abc123",
+    "content": "This is my memo content",
+    "visibility": "PRIVATE",
+    "createTime": "2026-02-28T10:00:00Z",
+    "updateTime": "2026-02-28T10:00:00Z",
+    "displayTime": "2026-02-28T10:00:00Z",
+    "creator": "users/123",
+    "snippet": "This is my memo..."
+  }
+}
+```
+
+### Payload Fields
+
+<ParamField path="url" type="string" required>
+  The target webhook URL (internal field, echoed back)
+</ParamField>
+
+<ParamField path="activityType" type="string" required>
+  The event type that triggered the webhook. One of:
+  - `memos.memo.created`
+  - `memos.memo.updated`
+  - `memos.memo.deleted`
+</ParamField>
+
+<ParamField path="creator" type="string" required>
+  Resource name of the user who triggered the event. Format: `users/{id}`
+</ParamField>
+
+<ParamField path="memo" type="object" required>
+  The full [Memo object](/api/memos) that triggered the webhook, including all fields like content, visibility, relations, resources, and metadata.
+</ParamField>
+
+## Expected Response
+
+Your webhook endpoint should respond with:
+
+- **Status code**: `200-299` (any 2xx status)
+- **Response body** (optional):
+
+```json
+{
+  "code": 0,
+  "message": "success"
+}
+```
+
+If the response body contains JSON with a non-zero `code` field, Memos will log it as an error.
+
+## Security Features
+
+### SSRF Protection
+
+Memos includes built-in protection against Server-Side Request Forgery (SSRF) attacks:
+
+- Webhook URLs are validated before registration
+- Connections to private/reserved IP addresses are blocked
+- DNS rebinding attacks are prevented
+
+**Blocked IP ranges:**
+- `127.0.0.0/8` - IPv4 loopback
+- `10.0.0.0/8` - RFC-1918 private networks
+- `172.16.0.0/12` - RFC-1918 private networks
+- `192.168.0.0/16` - RFC-1918 private networks
+- `169.254.0.0/16` - Link-local addresses (includes cloud metadata services)
+- `::1/128` - IPv6 loopback
+- `fc00::/7` - IPv6 unique local addresses
+- `fe80::/10` - IPv6 link-local addresses
+
+### Timeout
+
+Webhook requests have a 30-second timeout. If your endpoint doesn't respond within this time, the request will fail.
+
+## Managing Webhooks
+
+### List User Webhooks
+
+```bash
+curl -X GET https://your-memos.com/api/v1/users/123/webhooks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**Response:**
+
+```json
+{
+  "webhooks": [
+    {
+      "name": "users/123/webhooks/webhook-abc123",
+      "url": "https://your-endpoint.com/webhook",
+      "displayName": "My Integration",
+      "createTime": "2026-02-28T10:00:00Z",
+      "updateTime": "2026-02-28T10:00:00Z"
+    }
+  ]
+}
+```
+
+### Create Webhook
+
+```bash
+curl -X POST https://your-memos.com/api/v1/users/123/webhooks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "url": "https://your-endpoint.com/webhook",
+      "displayName": "My Integration"
+    }
+  }'
+```
+
+<Note>
+Webhook URLs must use `http` or `https` scheme and resolve to a public IP address.
+</Note>
+
+### Update Webhook
+
+```bash
+curl -X PATCH https://your-memos.com/api/v1/users/123/webhooks/webhook-abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "name": "users/123/webhooks/webhook-abc123",
+      "url": "https://new-endpoint.com/webhook",
+      "displayName": "Updated Integration"
+    },
+    "updateMask": "url,displayName"
+  }'
+```
+
+### Delete Webhook
+
+```bash
+curl -X DELETE https://your-memos.com/api/v1/users/123/webhooks/webhook-abc123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+## Example Implementations
+
+### Node.js + Express
+
+```javascript
+const express = require('express');
+const app = express();
+
+app.post('/webhook', express.json(), (req, res) => {
+  const { activityType, creator, memo } = req.body;
+  
+  console.log(`Received ${activityType} from ${creator}`);
+  console.log(`Memo: ${memo.content}`);
+  
+  // Process the webhook
+  if (activityType === 'memos.memo.created') {
+    // Handle new memo
+  }
+  
+  res.json({ code: 0, message: 'success' });
+});
+
+app.listen(3000);
+```
+
+### Python + Flask
+
+```python
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.json
+    activity_type = data.get('activityType')
+    creator = data.get('creator')
+    memo = data.get('memo')
+    
+    print(f"Received {activity_type} from {creator}")
+    print(f"Memo: {memo['content']}")
+    
+    # Process the webhook
+    if activity_type == 'memos.memo.created':
+        # Handle new memo
+        pass
+    
+    return jsonify({"code": 0, "message": "success"})
+
+if __name__ == '__main__':
+    app.run(port=3000)
+```
+
+### Go
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "log"
+    "net/http"
+)
+
+type WebhookPayload struct {
+    URL          string      `json:"url"`
+    ActivityType string      `json:"activityType"`
+    Creator      string      `json:"creator"`
+    Memo         interface{} `json:"memo"`
+}
+
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    var payload WebhookPayload
+    if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+    
+    log.Printf("Received %s from %s", payload.ActivityType, payload.Creator)
+    
+    // Process the webhook
+    if payload.ActivityType == "memos.memo.created" {
+        // Handle new memo
+    }
+    
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "code":    0,
+        "message": "success",
+    })
+}
+
+func main() {
+    http.HandleFunc("/webhook", webhookHandler)
+    log.Fatal(http.ListenAndServe(":3000", nil))
+}
+```
+
+## Use Cases
+
+### Slack Notifications
+
+Create a webhook that posts new memos to a Slack channel:
+
+```javascript
+const axios = require('axios');
+
+app.post('/webhook', express.json(), async (req, res) => {
+  const { activityType, memo } = req.body;
+  
+  if (activityType === 'memos.memo.created') {
+    await axios.post(process.env.SLACK_WEBHOOK_URL, {
+      text: `New memo: ${memo.content}`,
+      username: 'Memos Bot'
+    });
+  }
+  
+  res.json({ code: 0, message: 'success' });
+});
+```
+
+### Backup to External Storage
+
+```python
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.json
+    
+    if data['activityType'] in ['memos.memo.created', 'memos.memo.updated']:
+        memo = data['memo']
+        # Save to S3, Google Drive, etc.
+        save_to_backup(memo)
+    
+    return jsonify({"code": 0, "message": "success"})
+```
+
+### Analytics and Monitoring
+
+```go
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    var payload WebhookPayload
+    json.NewDecoder(r.Body).Decode(&payload)
+    
+    // Send to analytics service
+    analytics.Track(payload.Creator, payload.ActivityType, map[string]interface{}{
+        "memoId": payload.Memo["uid"],
+    })
+    
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "code":    0,
+        "message": "success",
+    })
+}
+```
+
+## Troubleshooting
+
+### Webhook Not Firing
+
+1. Verify the webhook is properly registered using the List Webhooks API
+2. Check that the webhook URL is accessible from your Memos server
+3. Ensure the URL uses `https` (recommended) or `http`
+4. Verify the URL doesn't resolve to a private IP address
+
+### Timeout Errors
+
+If your endpoint takes longer than 30 seconds to respond:
+
+1. Return a 200 response immediately
+2. Process the webhook asynchronously in a background job
+3. Use a message queue for heavy processing
+
+### Failed Deliveries
+
+Memos does not currently implement automatic retry for failed webhook deliveries. Your endpoint should:
+
+- Return a 2xx status code quickly
+- Handle errors gracefully
+- Implement your own retry logic if needed
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Respond Quickly" icon="bolt">
+    Always return a 200 response within a few seconds. Process heavy work asynchronously.
+  </Card>
+  
+  <Card title="Validate Payloads" icon="shield-check">
+    Verify the payload structure matches the expected format before processing.
+  </Card>
+  
+  <Card title="Use HTTPS" icon="lock">
+    Always use HTTPS endpoints in production to protect webhook data in transit.
+  </Card>
+  
+  <Card title="Log Everything" icon="file-lines">
+    Log incoming webhooks for debugging and auditing purposes.
+  </Card>
+</CardGroup>
+
+## Limitations
+
+- No automatic retry mechanism for failed deliveries
+- No webhook signature verification (HMAC)
+- 30-second timeout per request
+- Webhooks are user-specific (not instance-wide)
+- No filtering by event type (all memo events trigger all webhooks)
+
+## Related Resources
+
+- [Memo Resource](/api/memos) - Full memo object structure
+- [User Service](/api/users) - User webhook management endpoints
+- [Authentication](/api/authentication) - Required for webhook management

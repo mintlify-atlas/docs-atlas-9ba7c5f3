@@ -1,0 +1,665 @@
+---
+title: Tags and Filters
+description: Organize and find memos using tags and powerful CEL-based filtering
+---
+
+Memos provides flexible organization through hashtags and advanced filtering powered by Common Expression Language (CEL).
+
+## Using Tags
+
+### Creating Tags
+
+Tags are created automatically by typing `#` followed by text:
+
+```markdown
+Working on the #backend API today.
+This relates to #project-alpha and #development.
+
+Meeting with #team tomorrow to discuss #roadmap.
+```
+
+**Tag syntax:**
+- Start with `#` symbol
+- Alphanumeric characters (a-z, A-Z, 0-9)
+- Hyphens and underscores allowed
+- Unicode characters supported (Chinese, Japanese, Korean, etc.)
+- Case-sensitive: `#Work` and `#work` are different
+- No spaces (use hyphens: `#team-meeting`)
+
+### Tag Examples
+
+<CodeGroup>
+```markdown Simple Tags
+#work #personal #urgent #meeting
+```
+
+```markdown Hierarchical Tags
+#work/project/backend
+#book/fiction/scifi
+#recipe/dessert/chocolate
+```
+
+```markdown Unicode Tags
+#测试 #日本語 #한국어 #हिन्दी
+```
+
+```markdown Numeric Tags
+#2024 #Q1 #v1-0 #issue-123
+```
+</CodeGroup>
+
+<Note>
+Tags are automatically extracted when you save a memo. You don't need to declare them separately.
+</Note>
+
+### Tag Behavior
+
+<Tabs>
+  <Tab title="Case Sensitivity">
+    Tags preserve exact case:
+    
+    ```markdown
+    #Work #work #WORK
+    ```
+    
+    These create **three different tags**. For consistency:
+    - Choose a convention (lowercase, Title Case, etc.)
+    - Stick to it across all memos
+    - Use tag autocomplete to select existing tags
+  </Tab>
+  
+  <Tab title="Deduplication">
+    Duplicate tags in a single memo are removed:
+    
+    ```markdown
+    Important #meeting today. Don't forget the #meeting!
+    ```
+    
+    Results in tags: `["meeting"]` (appears once)
+  </Tab>
+  
+  <Tab title="Autocomplete">
+    The editor suggests existing tags:
+    
+    1. Type `#` in the editor
+    2. Start typing tag name
+    3. See matching existing tags
+    4. Press `Tab` or `Enter` to select
+    5. Maintains consistency automatically
+  </Tab>
+</Tabs>
+
+## Filtering Memos
+
+### Tag Filters
+
+Click any tag to filter memos:
+
+1. Click a `#tag` in any memo
+2. View all memos with that tag
+3. Click the tag filter to remove it
+4. Combine with other filters
+
+Or use the search:
+
+```
+Search for: #project-alpha
+Results: All memos tagged with #project-alpha
+```
+
+### Property Filters
+
+Filter by automatically extracted properties:
+
+<CardGroup cols={2}>
+  <Card title="Has Link" icon="link">
+    Find memos containing URLs or markdown links.
+    
+    ```cel
+    property.has_link == true
+    ```
+  </Card>
+  
+  <Card title="Has Code" icon="code">
+    Find memos with code blocks or inline code.
+    
+    ```cel
+    property.has_code == true
+    ```
+  </Card>
+  
+  <Card title="Has Tasks" icon="list-checks">
+    Find memos with task lists.
+    
+    ```cel
+    property.has_task_list == true
+    ```
+  </Card>
+  
+  <Card title="Has Incomplete Tasks" icon="circle">
+    Find memos with unchecked tasks.
+    
+    ```cel
+    property.has_incomplete_tasks == true
+    ```
+  </Card>
+</CardGroup>
+
+### Content Search
+
+Search memo content:
+
+```
+Search box: "meeting notes"
+Finds: Memos containing those words
+```
+
+Content search:
+- Case-insensitive
+- Searches memo content and titles
+- Supports partial word matching
+- Can be combined with filters
+
+### Visibility Filters
+
+Filter by memo visibility:
+
+<Tabs>
+  <Tab title="Private">
+    ```cel
+    visibility == "PRIVATE"
+    ```
+    Your private memos only.
+  </Tab>
+  
+  <Tab title="Protected">
+    ```cel
+    visibility == "PROTECTED"
+    ```
+    Memos visible to authenticated users.
+  </Tab>
+  
+  <Tab title="Public">
+    ```cel
+    visibility == "PUBLIC"
+    ```
+    Publicly accessible memos.
+  </Tab>
+</Tabs>
+
+## Advanced Filtering with CEL
+
+Memos uses [Common Expression Language](https://github.com/google/cel-spec) for powerful filtering.
+
+### Basic Syntax
+
+```cel
+# Equality
+tag_search == "work"
+visibility == "PRIVATE"
+
+# Comparison
+create_time > timestamp("2024-01-01T00:00:00Z")
+
+# String operations
+content_search.contains("meeting")
+
+# Boolean logic
+property.has_code == true
+
+# Negation
+!(visibility == "PUBLIC")
+```
+
+### Combining Filters
+
+Use logical operators:
+
+```cel
+# AND - both conditions must be true
+tag_search == "work" && property.has_task_list == true
+
+# OR - either condition can be true
+tag_search == "urgent" || property.has_incomplete_tasks == true
+
+# Complex combinations
+(tag_search == "work" || tag_search == "project") && 
+create_time > timestamp("2024-01-01T00:00:00Z")
+```
+
+### Field Reference
+
+| Field | Type | Description | Example |
+|-------|------|-------------|----------|
+| `tag_search` | string | Filter by tag | `tag_search == "work"` |
+| `content_search` | string | Search content | `content_search.contains("API")` |
+| `visibility` | string | Memo visibility | `visibility == "PRIVATE"` |
+| `pinned` | bool | Pinned status | `pinned == true` |
+| `creator_id` | int | Creator user ID | `creator_id == 123` |
+| `create_time` | timestamp | Creation time | `create_time > timestamp("2024-01-01T00:00:00Z")` |
+| `update_time` | timestamp | Last update | `update_time > create_time` |
+| `display_time` | timestamp | Display time | `display_time.getDate() == 1` |
+| `property.has_link` | bool | Contains links | `property.has_link == true` |
+| `property.has_code` | bool | Contains code | `property.has_code == true` |
+| `property.has_task_list` | bool | Contains tasks | `property.has_task_list == true` |
+| `property.has_incomplete_tasks` | bool | Has unchecked tasks | `property.has_incomplete_tasks == true` |
+
+### Date and Time Filters
+
+```cel
+# Memos from 2024
+create_time >= timestamp("2024-01-01T00:00:00Z") &&
+create_time < timestamp("2025-01-01T00:00:00Z")
+
+# Last 7 days (requires relative timestamps in implementation)
+create_time > timestamp("2024-01-20T00:00:00Z")
+
+# Specific date
+display_time.getDate() == 15
+
+# Specific month
+display_time.getMonth() == 1  # January (0-indexed)
+
+# Weekends (Saturday=6, Sunday=0)
+display_time.getDayOfWeek() == 0 || display_time.getDayOfWeek() == 6
+```
+
+### Example Filters
+
+<AccordionGroup>
+  <Accordion title="Work TODOs">
+    Find work-related memos with incomplete tasks:
+    
+    ```cel
+    tag_search == "work" && property.has_incomplete_tasks == true
+    ```
+  </Accordion>
+  
+  <Accordion title="Recent Code Snippets">
+    Find recent memos with code:
+    
+    ```cel
+    property.has_code == true && 
+    create_time > timestamp("2024-01-01T00:00:00Z")
+    ```
+  </Accordion>
+  
+  <Accordion title="Public Tutorials">
+    Find public memos tagged as tutorials:
+    
+    ```cel
+    visibility == "PUBLIC" && 
+    (tag_search == "tutorial" || tag_search == "howto")
+    ```
+  </Accordion>
+  
+  <Accordion title="Meeting Notes">
+    Find meeting notes from Q1:
+    
+    ```cel
+    tag_search == "meeting" && 
+    create_time >= timestamp("2024-01-01T00:00:00Z") &&
+    create_time < timestamp("2024-04-01T00:00:00Z")
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Shortcuts
+
+Save frequently used filters as shortcuts for quick access.
+
+### Creating Shortcuts
+
+1. Click **Create Shortcut** in the sidebar
+2. Enter a **title** (e.g., "Work TODOs")
+3. Enter your **filter expression**
+4. Save
+
+<CodeGroup>
+```cel Work TODOs
+tag_search == "work" && property.has_incomplete_tasks == true
+```
+
+```cel Recent Code
+property.has_code == true && 
+create_time > timestamp("2024-01-01T00:00:00Z")
+```
+
+```cel Team Updates
+tag_search == "team" || tag_search == "update"
+```
+</CodeGroup>
+
+### Using Shortcuts
+
+1. Click a shortcut in the sidebar
+2. Memos are filtered automatically
+3. Click again to clear the filter
+
+### Shortcut Features
+
+<Tabs>
+  <Tab title="Emoji Support">
+    Add emoji to shortcut titles:
+    
+    ```
+    💼 Work
+    ✅ Completed Tasks
+    👥 Team
+    📊 Reports
+    ```
+    
+    Emoji display as icons in the sidebar.
+  </Tab>
+  
+  <Tab title="Editing">
+    Update shortcuts:
+    
+    1. Click the menu (three dots) on a shortcut
+    2. Select **Edit**
+    3. Modify title or filter
+    4. Save changes
+  </Tab>
+  
+  <Tab title="Deleting">
+    Remove shortcuts:
+    
+    1. Click the menu on a shortcut
+    2. Select **Delete**
+    3. Confirm deletion
+  </Tab>
+</Tabs>
+
+### Shortcut Examples
+
+```javascript
+// API: Create a shortcut
+await client.createShortcut({
+  parent: "users/123",
+  shortcut: {
+    title: "💼 Work TODOs",
+    filter: 'tag_search == "work" && property.has_incomplete_tasks == true',
+  },
+});
+
+// List shortcuts
+const response = await client.listShortcuts({
+  parent: "users/123",
+});
+
+console.log(response.shortcuts);
+```
+
+## Filter UI
+
+### Active Filters
+
+View all active filters at the top of your memo list:
+
+- Each filter displays as a chip
+- Click the `X` to remove a filter
+- Filters are combined with AND logic
+- Clear all filters with a single button
+
+### Filter Sources
+
+Filters can come from:
+
+<CardGroup cols={2}>
+  <Card title="Tag Clicks" icon="hashtag">
+    Clicking a tag adds a tag filter.
+  </Card>
+  
+  <Card title="Search Box" icon="search">
+    Searching adds a content filter.
+  </Card>
+  
+  <Card title="Property Filters" icon="sliders">
+    Selecting properties adds property filters.
+  </Card>
+  
+  <Card title="Shortcuts" icon="zap">
+    Activating shortcuts applies saved filters.
+  </Card>
+</CardGroup>
+
+### URL Synchronization
+
+Filters are synced to the URL:
+
+```
+https://memos.example.com/?tag=work&filter=property.has_code
+```
+
+Benefits:
+- Shareable filtered views
+- Bookmarkable searches
+- Browser back/forward support
+- Deep linking to specific filters
+
+## Organizing Tags
+
+### Tag Hierarchies
+
+Use slashes for nested organization:
+
+```markdown
+#work/project/backend
+#work/project/frontend
+#work/admin/hr
+#work/admin/finance
+
+#book/fiction/scifi
+#book/fiction/fantasy
+#book/nonfiction/history
+```
+
+**Benefits:**
+- Logical grouping
+- Easy filtering at any level
+- Clear relationships
+- Scalable organization
+
+**Filtering hierarchies:**
+```cel
+# All work-related
+tag_search.startsWith("work/")
+
+# Specific project
+tag_search == "work/project/backend"
+
+# All project tags
+tag_search.startsWith("work/project/")
+```
+
+### Tag Conventions
+
+Establish consistent patterns:
+
+<Tabs>
+  <Tab title="Categories">
+    ```markdown
+    #category/work
+    #category/personal
+    #category/learning
+    ```
+  </Tab>
+  
+  <Tab title="Status">
+    ```markdown
+    #status/todo
+    #status/in-progress
+    #status/done
+    #status/blocked
+    ```
+  </Tab>
+  
+  <Tab title="Priority">
+    ```markdown
+    #priority/high
+    #priority/medium
+    #priority/low
+    ```
+  </Tab>
+  
+  <Tab title="Projects">
+    ```markdown
+    #project/alpha
+    #project/beta
+    #project/gamma
+    ```
+  </Tab>
+</Tabs>
+
+### Tag Maintenance
+
+Keep tags organized:
+
+<AccordionGroup>
+  <Accordion title="Review Periodically">
+    - Check for similar tags: `#meeting`, `#meetings`, `#mtg`
+    - Consolidate variations
+    - Update old memos to use consistent tags
+  </Accordion>
+  
+  <Accordion title="Rename Tags">
+    Use the API to batch rename:
+    
+    ```javascript
+    // Get all memos with old tag
+    const memos = await client.listMemos({
+      filter: 'tag_search == "old-tag"',
+    });
+    
+    // Update each memo
+    for (const memo of memos.memos) {
+      const newContent = memo.content.replace(/#old-tag/g, '#new-tag');
+      await client.updateMemo({
+        memo: { name: memo.name, content: newContent },
+        updateMask: { paths: ['content'] },
+      });
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Document Standards">
+    Create a reference memo:
+    
+    ```markdown
+    # Tag Standards
+    #meta #documentation
+    
+    ## Categories
+    - #work - Work-related items
+    - #personal - Personal notes
+    - #learning - Educational content
+    
+    ## Projects
+    - #project/alpha - Alpha project
+    - #project/beta - Beta project
+    
+    ## Status
+    - #status/todo - Not started
+    - #status/in-progress - Currently working
+    - #status/done - Completed
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## API Integration
+
+### Filter Validation
+
+Validate filters before saving:
+
+```javascript
+try {
+  await client.createShortcut({
+    parent: "users/123",
+    shortcut: {
+      title: "Test",
+      filter: 'tag_search == "work"',
+    },
+    validateOnly: true, // Only validate, don't create
+  });
+  console.log("Filter is valid!");
+} catch (error) {
+  console.error("Invalid filter:", error.message);
+}
+```
+
+### List Memos with Filters
+
+```javascript
+const response = await client.listMemos({
+  filter: 'tag_search == "work" && property.has_incomplete_tasks == true',
+  orderBy: "pinned desc, display_time desc",
+  pageSize: 50,
+});
+
+for (const memo of response.memos) {
+  console.log(`${memo.content} - ${memo.tags.join(", ")}`);
+}
+```
+
+### Extract Tags
+
+Tags are automatically extracted:
+
+```javascript
+const memo = await client.createMemo({
+  memo: {
+    content: "Working on #project with #team",
+  },
+});
+
+console.log(memo.tags); // ["project", "team"]
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Tag Naming">
+    - Use lowercase for general tags
+    - Use hyphens instead of spaces
+    - Keep tags short and memorable
+    - Avoid special characters
+    - Be consistent across memos
+  </Accordion>
+  
+  <Accordion title="Filter Design">
+    - Start simple, add complexity as needed
+    - Test filters before saving as shortcuts
+    - Use descriptive shortcut titles
+    - Document complex filter logic
+    - Share useful filters with your team
+  </Accordion>
+  
+  <Accordion title="Organization">
+    - Limit to 3-5 tags per memo
+    - Use hierarchies for related concepts
+    - Create shortcuts for common filters
+    - Review and clean up tags quarterly
+    - Archive old tags by removing from memos
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Shortcuts" icon="zap" href="/features/shortcuts">
+    Save custom filters for quick access
+  </Card>
+  
+  <Card title="Creating Memos" icon="pen" href="/features/memos">
+    Learn how to create and organize memos
+  </Card>
+  
+  <Card title="Filter API" icon="code" href="/api-reference/memo-service">
+    Use filters in API requests
+  </Card>
+  
+  <Card title="Explore" icon="compass" href="/features/explore-and-sharing">
+    Discover public memos with filters
+  </Card>
+</CardGroup>

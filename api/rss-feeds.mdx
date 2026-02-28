@@ -1,0 +1,374 @@
+---
+title: RSS Feeds
+description: Publish and subscribe to Memos content via RSS
+icon: rss
+---
+
+Memos provides built-in RSS feed generation for public content, allowing users to subscribe to memos using any RSS reader.
+
+## Available Feeds
+
+Memos automatically generates RSS feeds for public content:
+
+### Explore Feed
+
+Public memos from all users on the instance:
+
+```
+https://your-memos.com/explore/rss.xml
+```
+
+### User Feed
+
+Public memos from a specific user:
+
+```
+https://your-memos.com/u/{username}/rss.xml
+```
+
+<Note>
+Only memos with `PUBLIC` visibility are included in RSS feeds. Private and protected memos are automatically excluded.
+</Note>
+
+## Feed Format
+
+Memos generates RSS 2.0 compliant feeds using the [gorilla/feeds](https://github.com/gorilla/feeds) library.
+
+### Feed Structure
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Memos</title>
+    <link>https://your-memos.com</link>
+    <description>An open source, lightweight note-taking service.</description>
+    <language>en-us</language>
+    <pubDate>Fri, 28 Feb 2026 10:00:00 +0000</pubDate>
+    
+    <item>
+      <title>My First Memo</title>
+      <link>https://your-memos.com/memos/abc123</link>
+      <description>&lt;p&gt;This is my memo content&lt;/p&gt;</description>
+      <content:encoded>&lt;p&gt;This is my memo content&lt;/p&gt;</content:encoded>
+      <author>user@example.com (John Doe)</author>
+      <guid>https://your-memos.com/memos/abc123</guid>
+      <pubDate>Fri, 28 Feb 2026 10:00:00 +0000</pubDate>
+      <enclosure url="https://your-memos.com/file/attachments/xyz789/image.jpg" 
+                 length="102400" 
+                 type="image/jpeg" />
+    </item>
+  </channel>
+</rss>
+```
+
+## Feed Item Details
+
+### Title Generation
+
+Memos automatically generates item titles from memo content:
+
+1. Extracts the first line of the memo
+2. Removes markdown heading syntax (`#`, `##`, etc.)
+3. Truncates to 100 characters at word boundary
+4. Adds ellipsis (`...`) if truncated
+5. Falls back to "Memo" if empty
+
+**Examples:**
+
+| Memo Content | Generated Title |
+|--------------|----------------|
+| `# Hello World\n\nThis is content` | `Hello World` |
+| `This is a memo` | `This is a memo` |
+| `A very long title that exceeds one hundred characters and needs to be truncated...` | `A very long title that exceeds one hundred characters and needs to be truncated...` |
+| *(empty)* | `Memo` |
+
+### Content Rendering
+
+Memo content is rendered as HTML using the markdown service:
+
+- Markdown is converted to HTML
+- Both `<description>` and `<content:encoded>` contain the full HTML
+- Inline styles and formatting are preserved
+- Code blocks are rendered with proper formatting
+
+### Author Information
+
+Each feed item includes author details:
+
+```xml
+<author>user@example.com (Display Name)</author>
+```
+
+- Uses the user's display name or username as fallback
+- Includes email address if available
+- In explore feeds, each item shows its respective author
+- In user feeds, all items share the same author
+
+### Attachments as Enclosures
+
+The first attachment of a memo is included as an RSS enclosure:
+
+```xml
+<enclosure url="https://your-memos.com/file/attachments/xyz789/image.jpg" 
+           length="102400" 
+           type="image/jpeg" />
+```
+
+**Enclosure URL by storage type:**
+
+- **Local storage**: `{baseURL}/file/attachments/{uid}/{filename}`
+- **External storage**: Direct reference URL
+- **S3 storage**: Direct reference URL (presigned if configured)
+
+<Info>
+Only the first attachment is included in the RSS enclosure. To access all attachments, users must visit the memo's web page.
+</Info>
+
+## Caching and Performance
+
+### Server-Side Caching
+
+RSS feeds are cached to improve performance:
+
+- **Cache duration**: 1 hour (3600 seconds)
+- **Maximum cache size**: 50 feeds
+- **Eviction policy**: Least Recently Used (LRU)
+- **Cache keys**: `explore` and `user:{username}`
+
+### HTTP Caching Headers
+
+Feeds include standard HTTP caching headers:
+
+```http
+Content-Type: application/rss+xml; charset=utf-8
+Cache-Control: public, max-age=3600
+ETag: "a1b2c3d4e5f6g7h8"
+Last-Modified: Fri, 28 Feb 2026 10:00:00 GMT
+```
+
+### Conditional Requests
+
+RSS readers can use `If-None-Match` for efficient polling:
+
+**Request:**
+
+```http
+GET /explore/rss.xml HTTP/1.1
+Host: your-memos.com
+If-None-Match: "a1b2c3d4e5f6g7h8"
+```
+
+**Response (if unchanged):**
+
+```http
+HTTP/1.1 304 Not Modified
+```
+
+**Response (if changed):**
+
+```http
+HTTP/1.1 200 OK
+ETag: "b2c3d4e5f6g7h8i9"
+Content-Type: application/rss+xml; charset=utf-8
+
+<?xml version="1.0" encoding="UTF-8"?>
+...
+```
+
+## Feed Limits
+
+To maintain performance and reasonable feed sizes:
+
+- **Maximum items per feed**: 100 memos
+- **Ordering**: Most recently updated first
+- **Visibility**: Only `PUBLIC` memos are included
+- **Status**: Only `NORMAL` (non-archived) memos are included
+
+## Custom Feed Configuration
+
+Feed metadata can be customized via instance settings:
+
+```bash
+# Default feed information
+Title: "Memos"
+Description: "An open source, lightweight note-taking service. Easily capture and share your great thoughts."
+Language: "en-us"
+```
+
+To customize via the API:
+
+```bash
+curl -X PATCH https://your-memos.com/api/v1/instance/settings \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customProfile": {
+      "title": "My Memos Instance",
+      "description": "Personal knowledge base and notes"
+    }
+  }'
+```
+
+These settings affect the `<title>` and `<description>` elements in the RSS channel.
+
+## Example: Subscribe to User Feed
+
+### Using curl
+
+```bash
+curl https://your-memos.com/u/steven/rss.xml
+```
+
+### Using RSS Readers
+
+**Feedly, Inoreader, NewsBlur, etc.:**
+
+1. Copy the feed URL: `https://your-memos.com/u/steven/rss.xml`
+2. Add to your RSS reader
+3. The reader will poll the feed periodically for updates
+
+**Self-hosted readers (Miniflux, FreshRSS, etc.):**
+
+Add the feed URL to your reader's subscription list.
+
+## Implementation Details
+
+### Feed Generation Process
+
+Source: `server/router/rss/rss.go`
+
+1. **Fetch memos**: Query database for public memos (max 100)
+2. **Batch load resources**: Fetch all attachments and creators in bulk to avoid N+1 queries
+3. **Generate items**: Convert each memo to RSS item with title, content, author
+4. **Add enclosures**: Include first attachment as enclosure
+5. **Render XML**: Use gorilla/feeds to generate RSS 2.0 XML
+6. **Cache result**: Store in memory cache with ETag
+7. **Return response**: Send with cache headers
+
+### Performance Optimizations
+
+- Batch loading of attachments prevents N+1 query problems
+- Batch loading of user information reduces database round-trips
+- In-memory caching reduces repeated rendering
+- ETag support allows RSS readers to skip unchanged feeds
+- Cache-Control headers enable CDN and browser caching
+
+## Use Cases
+
+### Personal Knowledge Garden
+
+Share your public notes with others:
+
+```
+https://your-memos.com/u/yourname/rss.xml
+```
+
+Subscribers can follow your thoughts and learnings in their RSS reader.
+
+### Team Blog
+
+Use the explore feed for a team blog:
+
+```
+https://team-memos.com/explore/rss.xml
+```
+
+Anyone can subscribe to stay updated with team notes and announcements.
+
+### Read-it-Later Integration
+
+Connect RSS feeds to read-it-later services:
+
+- **Pocket**: Use IFTTT to send new feed items to Pocket
+- **Instapaper**: Use Zapier to forward items
+- **Wallabag**: Direct RSS subscription
+
+### Aggregate Multiple Users
+
+Create a feed aggregator for multiple Memos users:
+
+```python
+import feedparser
+import feedgenerator
+
+# Fetch multiple user feeds
+feeds = [
+    feedparser.parse('https://memos.com/u/alice/rss.xml'),
+    feedparser.parse('https://memos.com/u/bob/rss.xml'),
+]
+
+# Combine into single feed
+fg = feedgenerator.Rss201rev2Feed(
+    title="Team Memos",
+    link="https://memos.com",
+    description="Combined feed from team members"
+)
+
+for feed in feeds:
+    for entry in feed.entries:
+        fg.add_item(
+            title=entry.title,
+            link=entry.link,
+            description=entry.description,
+            pubdate=entry.published_parsed
+        )
+
+print(fg.writeString('utf-8'))
+```
+
+## Limitations
+
+- No authentication support (feeds are public only)
+- No filtering by tags or date range
+- Maximum 100 items per feed
+- No pagination for feeds with many items
+- No custom feed formats (Atom, JSON Feed)
+- Attachments beyond the first are not included in enclosures
+- No support for categories/tags in RSS items
+
+## Troubleshooting
+
+### Feed Shows No Items
+
+**Possible causes:**
+
+1. User has no public memos
+2. All memos are set to `PRIVATE` or `PROTECTED` visibility
+3. All memos are archived (not `NORMAL` status)
+
+**Solution:**
+
+Ensure at least one memo has:
+- Visibility: `PUBLIC`
+- Status: `NORMAL` (not archived)
+
+### Feed URL Returns 404
+
+**Possible causes:**
+
+1. Username is incorrect
+2. User doesn't exist
+3. RSS routes are not registered
+
+**Solution:**
+
+Verify the username by visiting the user's profile page, or use the explore feed instead.
+
+### Images Not Loading
+
+**Possible causes:**
+
+1. Attachment storage is misconfigured
+2. Presigned URLs have expired (S3 storage)
+3. External references are broken
+
+**Solution:**
+
+Check the attachment URL in the enclosure and verify it's accessible. For S3 storage, presigned URLs are valid for 5 days.
+
+## Related Resources
+
+- [Memo Resource](/api/memos) - Memo visibility and structure
+- [Attachment Resource](/api/attachments) - Attachment storage types
+- [Instance Settings](/configuration/environment-variables) - Customize feed metadata

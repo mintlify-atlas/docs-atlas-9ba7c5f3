@@ -1,0 +1,617 @@
+---
+title: File Attachments
+description: Upload, manage, and share files with your memos including automatic EXIF stripping for privacy
+---
+
+Memos supports rich file attachments including images, documents, videos, and more. Files can be stored locally or in S3-compatible cloud storage.
+
+## Uploading Files
+
+### Drag and Drop
+
+The easiest way to add attachments:
+
+1. Open the memo editor
+2. Drag files from your desktop
+3. Drop them onto the editor
+4. Files upload automatically
+
+Supported in:
+- New memo creation
+- Editing existing memos
+- Comments
+
+### Upload Button
+
+Use the toolbar for traditional file selection:
+
+1. Click the **attachment icon** in the toolbar
+2. Browse your file system
+3. Select one or more files
+4. Files upload and attach to your memo
+
+### Paste from Clipboard
+
+Quickly paste screenshots and images:
+
+1. Copy an image to your clipboard
+2. Paste (`Ctrl/Cmd + V`) in the editor
+3. The image uploads automatically
+4. A reference is inserted at your cursor
+
+This works great for:
+- Screenshots
+- Images from other applications
+- Copied files from file managers
+
+## File Types
+
+<Tabs>
+  <Tab title="Images">
+    Supported formats:
+    - **JPEG/JPG** - Photos and compressed images
+    - **PNG** - Screenshots and graphics with transparency
+    - **GIF** - Animations
+    - **WebP** - Modern web format
+    - **SVG** - Vector graphics
+    - **HEIC/HEIF** - Apple's high-efficiency formats
+    - **TIFF** - High-quality images
+    
+    Features:
+    - Automatic thumbnails
+    - Responsive sizing
+    - Lazy loading
+    - EXIF metadata removal (privacy protection)
+  </Tab>
+  
+  <Tab title="Documents">
+    Common formats:
+    - **PDF** - Documents and reports
+    - **TXT/MD** - Text and Markdown files
+    - **DOC/DOCX** - Microsoft Word
+    - **XLS/XLSX** - Spreadsheets
+    - **PPT/PPTX** - Presentations
+    
+    Documents are stored and downloadable but not previewed inline.
+  </Tab>
+  
+  <Tab title="Media">
+    Audio and video:
+    - **MP4/WebM/OGG** - Video files
+    - **MP3/WAV/FLAC** - Audio files
+    
+    Media files can be played inline with browser-native players.
+  </Tab>
+  
+  <Tab title="Other">
+    Any file type:
+    - **ZIP/TAR/GZ** - Archives
+    - **JSON/YAML/XML** - Data files
+    - Custom file types
+    
+    All files are stored securely with MIME type validation.
+  </Tab>
+</Tabs>
+
+## Privacy & Security
+
+### Automatic EXIF Stripping
+
+<Warning>
+Image files may contain sensitive metadata like GPS location, camera settings, and timestamps.
+</Warning>
+
+Memos **automatically removes EXIF data** from uploaded images for your privacy:
+
+<CardGroup cols={2}>
+  <Card title="What's Removed" icon="shield-check">
+    - GPS coordinates
+    - Camera make and model
+    - Date/time taken
+    - Software used
+    - Copyright information
+    - Thumbnail previews
+  </Card>
+  
+  <Card title="What's Preserved" icon="image">
+    - Image content and quality
+    - Dimensions and aspect ratio
+    - Color profiles
+    - Visual appearance
+    - JPEG quality: 95%
+    - PNG: lossless
+  </Card>
+</CardGroup>
+
+**Formats processed:**
+- JPEG/JPG
+- TIFF
+- WebP
+- HEIC/HEIF
+
+The process:
+1. Image is decoded on upload
+2. EXIF orientation is applied (image displays correctly)
+3. Image is re-encoded without metadata
+4. Clean image is stored
+
+<Note>
+If EXIF stripping fails, the original image is uploaded with a warning logged. Uploads never fail due to metadata issues.
+</Note>
+
+### File Validation
+
+All uploads are validated:
+
+```typescript
+// Filename requirements
+- No path traversal (../, .\)
+- No directory separators
+- Valid characters only
+- No leading/trailing spaces or dots
+
+// MIME type validation
+- Must match pattern: type/subtype
+- Maximum length: 255 characters
+- Validated against file extension
+```
+
+## Storage Options
+
+<Tabs>
+  <Tab title="Local Storage">
+    Files stored on your server's filesystem:
+    
+    **Configuration:**
+    ```yaml
+    storage:
+      type: LOCAL
+      filepath_template: "assets/{timestamp}_{filename}"
+    ```
+    
+    **Template variables:**
+    - `{filename}` - Original filename
+    - `{timestamp}` - Unix timestamp
+    - `{year}` - Current year (4 digits)
+    - `{month}` - Current month (2 digits)
+    - `{day}` - Current day (2 digits)
+    - `{hour}` - Current hour (2 digits)
+    - `{minute}` - Current minute (2 digits)
+    - `{second}` - Current second (2 digits)
+    - `{uuid}` - Random UUID
+    
+    **Example paths:**
+    ```
+    assets/1706123456_photo.jpg
+    uploads/{year}/{month}/{day}/{filename}
+    files/{uuid}.{ext}
+    ```
+    
+    **Pros:**
+    - Simple setup
+    - No external dependencies
+    - Fast access
+    - No additional costs
+    
+    **Cons:**
+    - Limited by server disk space
+    - Backups required
+    - No CDN support
+  </Tab>
+  
+  <Tab title="S3 Storage">
+    Store files in S3-compatible cloud storage:
+    
+    **Supported providers:**
+    - Amazon S3
+    - MinIO
+    - Cloudflare R2
+    - DigitalOcean Spaces
+    - Backblaze B2
+    - Wasabi
+    
+    **Configuration:**
+    ```yaml
+    storage:
+      type: S3
+      s3_config:
+        access_key: "your-access-key"
+        secret_key: "your-secret-key"
+        endpoint: "https://s3.region.amazonaws.com"
+        region: "us-east-1"
+        bucket: "memos-attachments"
+      filepath_template: "{year}/{month}/{uuid}_{filename}"
+    ```
+    
+    **Features:**
+    - Presigned URLs for secure access
+    - Automatic URL refresh
+    - CDN integration
+    - Unlimited storage (based on provider)
+    
+    **Pros:**
+    - Scalable storage
+    - Geographic redundancy
+    - CDN support
+    - Off-site backups
+    
+    **Cons:**
+    - Additional costs
+    - Configuration required
+    - Network dependency
+  </Tab>
+</Tabs>
+
+## Upload Limits
+
+Configure maximum upload size:
+
+<CodeGroup>
+```yaml System Setting
+storage:
+  upload_size_limit_mb: 32
+```
+
+```javascript Check Limit
+const settings = await client.getInstanceStorageSetting({});
+console.log(`Max upload: ${settings.uploadSizeLimitMb} MB`);
+```
+</CodeGroup>
+
+**Default limits:**
+- Upload size: **32 MB** (configurable)
+- Memory buffer: 32 MB (system constant)
+- Concurrent uploads: No hard limit (browser/network constrained)
+
+<Note>
+Large files (>100MB) should use cloud storage with direct upload capabilities for better performance.
+</Note>
+
+## Managing Attachments
+
+### View Attachments
+
+Access all your uploaded files:
+
+1. Navigate to **Attachments** page from the sidebar
+2. View all attachments with metadata:
+   - Filename
+   - Type (MIME)
+   - Size
+   - Upload date
+   - Associated memo (if any)
+
+### Filter Attachments
+
+Use the filter syntax:
+
+```cel
+# Find images
+type.contains("image/")
+
+# Find PDFs
+type == "application/pdf"
+
+# Find files from specific date
+create_time > timestamp("2024-01-01T00:00:00Z")
+
+# Find large files (>10MB)
+size > 10485760
+
+# Find unattached files
+memo == ""
+
+# Combined filters
+type.contains("image/") && size > 1048576
+```
+
+### Delete Attachments
+
+<Warning>
+Deleting an attachment is permanent. References in memos will break.
+</Warning>
+
+To delete:
+
+1. Find the attachment in the Attachments page
+2. Click the **delete icon**
+3. Confirm deletion
+
+When deleting:
+- File is removed from storage
+- Database record is deleted
+- Memo references become broken links
+- Thumbnails are also deleted
+
+### Rename Attachments
+
+Update attachment metadata:
+
+```javascript
+await client.updateAttachment({
+  attachment: {
+    name: "attachments/xyz789",
+    filename: "new-name.jpg",
+  },
+  updateMask: { paths: ["filename"] },
+});
+```
+
+Renaming updates:
+- Display name in UI
+- Download filename
+- Metadata only (file on disk unchanged)
+
+## Linking Attachments to Memos
+
+### During Creation
+
+Attachments are automatically linked when uploaded:
+
+```javascript
+const attachment = await client.createAttachment({
+  attachment: {
+    filename: "screenshot.png",
+    content: imageBytes,
+    type: "image/png",
+    memo: "memos/abc123", // Link to memo
+  },
+});
+```
+
+### After Upload
+
+Link existing attachments:
+
+```javascript
+await client.setMemoAttachments({
+  name: "memos/abc123",
+  attachments: [
+    { name: "attachments/xyz789" },
+    { name: "attachments/xyz790" },
+  ],
+});
+```
+
+### Unlink Attachments
+
+Remove attachment from memo (file remains):
+
+```javascript
+// Set empty attachments array
+await client.setMemoAttachments({
+  name: "memos/abc123",
+  attachments: [],
+});
+```
+
+## Access Control
+
+Attachment visibility follows memo visibility:
+
+<CardGroup cols={3}>
+  <Card title="Private Memo" icon="lock">
+    Only the creator can access attachments.
+  </Card>
+  
+  <Card title="Protected Memo" icon="shield">
+    All authenticated users can access.
+  </Card>
+  
+  <Card title="Public Memo" icon="globe">
+    Anyone with the link can access, even without login.
+  </Card>
+</CardGroup>
+
+**Unlinked attachments:**
+- Only the creator can access
+- Not visible in public/protected contexts
+- Useful for staging before publishing
+
+## API Reference
+
+### Create Attachment
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://your-instance.com/api/v1/attachments \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "filename=photo.jpg" \
+  -F "content=@photo.jpg" \
+  -F "type=image/jpeg"
+```
+
+```javascript JavaScript
+const file = document.querySelector('input[type="file"]').files[0];
+const bytes = await file.arrayBuffer();
+
+const attachment = await client.createAttachment({
+  attachment: {
+    filename: file.name,
+    content: new Uint8Array(bytes),
+    type: file.type,
+    memo: memoName, // optional
+  },
+});
+
+console.log(attachment.name); // "attachments/xyz789"
+```
+
+```python Python
+import requests
+
+with open("photo.jpg", "rb") as f:
+    response = requests.post(
+        "https://your-instance.com/api/v1/attachments",
+        headers={"Authorization": "Bearer YOUR_TOKEN"},
+        files={
+            "filename": "photo.jpg",
+            "content": f,
+            "type": "image/jpeg"
+        }
+    )
+
+attachment = response.json()
+print(attachment["name"])
+```
+</CodeGroup>
+
+### List Attachments
+
+```javascript
+const response = await client.listAttachments({
+  pageSize: 50,
+  filter: 'type.contains("image/")',
+  orderBy: "create_time desc",
+});
+
+for (const attachment of response.attachments) {
+  console.log(`${attachment.filename} - ${attachment.size} bytes`);
+}
+```
+
+### Download Attachment
+
+```javascript
+const attachment = await client.getAttachment({
+  name: "attachments/xyz789",
+});
+
+// For external/S3 storage
+if (attachment.externalLink) {
+  window.open(attachment.externalLink);
+} else {
+  // For local storage, use direct path
+  window.open(`/o/${attachment.name}`);
+}
+```
+
+### API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|----------|
+| `/api/v1/attachments` | POST | Upload attachment |
+| `/api/v1/attachments` | GET | List attachments |
+| `/api/v1/attachments/{id}` | GET | Get attachment metadata |
+| `/api/v1/attachments/{id}` | PATCH | Update filename |
+| `/api/v1/attachments/{id}` | DELETE | Delete attachment |
+| `/api/v1/memos/{id}/attachments` | GET | List memo attachments |
+| `/api/v1/memos/{id}/attachments` | PATCH | Set memo attachments |
+| `/o/attachments/{id}` | GET | Download file (direct) |
+
+## Thumbnails
+
+Images automatically generate thumbnails:
+
+**Supported formats:**
+- `image/png`
+- `image/jpeg`
+
+**Thumbnail generation:**
+- Created on-demand
+- Cached in `.thumbnail_cache/` directory
+- Maximum 3 concurrent generations (prevents overload)
+- Responsive sizes for different viewports
+
+**Storage:**
+```
+data/
+├── assets/
+│   └── photo.jpg (original)
+└── .thumbnail_cache/
+    └── photo.jpg (thumbnail)
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Image Optimization">
+    - Compress images before upload (use tools like TinyPNG)
+    - Use WebP format for better compression
+    - Resize large images to reasonable dimensions (< 4K)
+    - Prefer JPEG for photos, PNG for screenshots
+  </Accordion>
+  
+  <Accordion title="File Organization">
+    - Use descriptive filenames
+    - Link attachments to memos immediately
+    - Periodically clean up unused attachments
+    - Use cloud storage for archival content
+  </Accordion>
+  
+  <Accordion title="Security">
+    - Never upload sensitive unencrypted data
+    - Verify EXIF stripping for privacy-sensitive photos
+    - Use private memos for confidential attachments
+    - Enable S3 bucket policies for additional security
+  </Accordion>
+  
+  <Accordion title="Performance">
+    - Batch upload multiple small files
+    - Use S3 with CDN for global distribution
+    - Clean thumbnail cache periodically
+    - Monitor storage usage and set limits
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Upload Fails">
+    **Possible causes:**
+    - File exceeds size limit
+    - Invalid filename or MIME type
+    - Storage quota exceeded
+    - Network timeout
+    
+    **Solutions:**
+    - Check file size against limit
+    - Rename file to remove special characters
+    - Verify storage configuration
+    - Try smaller files or chunks
+  </Accordion>
+  
+  <Accordion title="Image Not Displaying">
+    **Check:**
+    - Attachment is linked to memo
+    - File permissions (local storage)
+    - S3 presigned URL is valid
+    - Browser console for errors
+    
+    **Solutions:**
+    - Re-link attachment
+    - Fix file permissions (644 recommended)
+    - Trigger URL refresh
+    - Clear browser cache
+  </Accordion>
+  
+  <Accordion title="EXIF Not Stripped">
+    **Verify:**
+    - Check server logs for warnings
+    - Download and inspect with ExifTool
+    - Confirm image format is supported
+    
+    **Note:**
+    EXIF stripping never blocks uploads. If it fails, the original image is stored with a warning.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Memos" icon="pen" href="/features/memos">
+    Learn how to create memos with attachments
+  </Card>
+  
+  <Card title="Markdown Support" icon="markdown" href="/features/markdown-support">
+    Embed attachments in Markdown content
+  </Card>
+  
+  <Card title="Storage Configuration" icon="server" href="/configuration/storage">
+    Configure local or S3 storage
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api-reference/attachment-service">
+    Full attachment API documentation
+  </Card>
+</CardGroup>

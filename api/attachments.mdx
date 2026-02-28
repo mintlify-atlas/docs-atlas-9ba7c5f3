@@ -1,0 +1,481 @@
+---
+title: Attachments
+description: API endpoints for managing file attachments in Memos
+---
+
+## Overview
+
+Attachments are files uploaded to Memos and associated with memos. Supported file types include images, videos, audio, documents, and more. Attachments can be stored locally or in S3-compatible storage.
+
+## Create Attachment
+
+<Note>
+Uploads a new file attachment. The file content is provided as base64-encoded bytes in the request.
+</Note>
+
+```bash POST /api/v1/attachments
+curl -X POST https://your-memos-instance.com/api/v1/attachments \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "attachment": {
+      "filename": "screenshot.png",
+      "type": "image/png",
+      "content": "iVBORw0KGgoAAAANSUhEUgAAAAUA..."
+    }
+  }'
+```
+
+### Request Body
+
+<ParamField body="attachment" type="object" required>
+  The attachment to create
+  
+  <Expandable title="properties">
+    <ParamField body="filename" type="string" required>
+      The filename with extension (e.g., `"document.pdf"`). Must not contain invalid characters.
+    </ParamField>
+    
+    <ParamField body="content" type="bytes" required>
+      The file content encoded as base64 bytes
+    </ParamField>
+    
+    <ParamField body="type" type="string">
+      MIME type of the file (e.g., `"image/png"`, `"application/pdf"`). If not provided, will be detected from filename or content.
+    </ParamField>
+    
+    <ParamField body="external_link" type="string">
+      Optional external URL for the attachment (alternative to uploading content)
+    </ParamField>
+    
+    <ParamField body="memo" type="string">
+      Optional memo to associate with this attachment. Format: `memos/{memo_id}`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="attachment_id" type="string">
+  Optional custom ID for the attachment. If not provided, a unique ID will be generated.
+</ParamField>
+
+### File Upload Limits
+
+- Maximum file size determined by instance settings (default: 32 MB)
+- Configurable via `upload_size_limit_mb` in storage settings
+- Files exceeding the limit will return a `400 Invalid Argument` error
+
+### EXIF Metadata Stripping
+
+For privacy protection, EXIF metadata is automatically stripped from uploaded images:
+- **Affected formats**: JPEG, JPG, TIFF, WebP, HEIC, HEIF
+- **Removed data**: GPS location, camera settings, device information, timestamps
+- **Quality**: Images are re-encoded at 95% JPEG quality to maintain visual fidelity
+
+### Response
+
+<ResponseField name="name" type="string">
+  The resource name of the attachment. Format: `attachments/{attachment_id}`
+</ResponseField>
+
+<ResponseField name="create_time" type="timestamp">
+  The creation timestamp
+</ResponseField>
+
+<ResponseField name="filename" type="string">
+  The filename of the attachment
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  The MIME type of the attachment
+</ResponseField>
+
+<ResponseField name="size" type="integer">
+  The size of the attachment in bytes
+</ResponseField>
+
+<ResponseField name="memo" type="string">
+  The associated memo resource name, if any. Format: `memos/{memo_id}`
+</ResponseField>
+
+<ResponseField name="external_link" type="string">
+  The external link, if provided
+</ResponseField>
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument**
+  - Missing required fields (filename, content)
+  - Filename contains invalid characters
+  - Invalid MIME type format
+  - File size exceeds limit
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "name": "attachments/xyz789abc",
+  "create_time": "2024-01-15T14:30:00Z",
+  "filename": "screenshot.png",
+  "type": "image/png",
+  "size": 245680,
+  "memo": "memos/abc123"
+}
+```
+
+---
+
+## List Attachments
+
+<Note>
+Retrieves a paginated list of attachments with optional filtering and sorting.
+</Note>
+
+```bash GET /api/v1/attachments
+curl "https://your-memos-instance.com/api/v1/attachments?page_size=20&filter=mime_type=='image/png'" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Query Parameters
+
+<ParamField query="page_size" type="integer">
+  Maximum number of attachments to return. Default: 50, Maximum: 1000
+</ParamField>
+
+<ParamField query="page_token" type="string">
+  Token for retrieving the next page of results (from previous response)
+</ParamField>
+
+<ParamField query="filter" type="string">
+  CEL expression to filter attachments. Examples:
+  - `mime_type == "image/png"`
+  - `filename.contains("report")`
+  - `create_time > timestamp("2024-01-01T00:00:00Z")`
+  - `memo == "memos/abc123"`
+  
+  **Supported operators**: `==`, `!=`, `<`, `<=`, `>`, `>=`, `:` (contains), `in`
+  
+  **Supported fields**: `filename`, `mime_type`, `create_time`, `memo`
+</ParamField>
+
+<ParamField query="order_by" type="string">
+  Sort order. Examples:
+  - `"create_time desc"` (default)
+  - `"filename asc"`
+  - `"size desc"`
+</ParamField>
+
+### Response
+
+<ResponseField name="attachments" type="array">
+  Array of attachment objects (same structure as Create Attachment response)
+</ResponseField>
+
+<ResponseField name="next_page_token" type="string">
+  Token for retrieving the next page. Omitted if no more pages.
+</ResponseField>
+
+<ResponseField name="total_size" type="integer">
+  Total count of attachments (may be approximate)
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "attachments": [
+    {
+      "name": "attachments/xyz789",
+      "create_time": "2024-01-15T14:30:00Z",
+      "filename": "report.pdf",
+      "type": "application/pdf",
+      "size": 1048576,
+      "memo": "memos/abc123"
+    },
+    {
+      "name": "attachments/def456",
+      "create_time": "2024-01-14T09:15:00Z",
+      "filename": "photo.jpg",
+      "type": "image/jpeg",
+      "size": 524288
+    }
+  ],
+  "next_page_token": "CgVhYmNkZQ==",
+  "total_size": 42
+}
+```
+
+---
+
+## Get Attachment
+
+<Note>
+Retrieves metadata for a single attachment by ID. To download the actual file, use the file server endpoint.
+</Note>
+
+```bash GET /api/v1/attachments/{attachment_id}
+curl https://your-memos-instance.com/api/v1/attachments/xyz789 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="attachment_id" type="string" required>
+  The ID of the attachment to retrieve
+</ParamField>
+
+### Response
+
+Returns an attachment object (same structure as Create Attachment response).
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid attachment ID format
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Attachment does not exist
+</ResponseField>
+
+---
+
+## Update Attachment
+
+<Note>
+Updates specific fields of an attachment using field masks. Typically used to update the associated memo or external link.
+</Note>
+
+```bash PATCH /api/v1/attachments/{attachment_id}
+curl -X PATCH https://your-memos-instance.com/api/v1/attachments/xyz789 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "attachment": {
+      "name": "attachments/xyz789",
+      "memo": "memos/newmemo123"
+    },
+    "update_mask": {
+      "paths": ["memo"]
+    }
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="attachment_id" type="string" required>
+  The ID of the attachment to update
+</ParamField>
+
+### Request Body
+
+<ParamField body="attachment" type="object" required>
+  The attachment object with updated fields. Must include `name` field.
+</ParamField>
+
+<ParamField body="update_mask" type="object" required>
+  Specifies which fields to update.
+  
+  <Expandable title="paths">
+    <ParamField body="paths" type="array" required>
+      Array of field paths to update: `["memo", "external_link", "filename"]`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Updatable Fields
+
+- `memo` - Associated memo resource name
+- `external_link` - External URL
+- `filename` - Filename (metadata only, doesn't rename actual file)
+
+<Warning>
+You cannot update the `content` or `type` fields. To change the file content, delete the attachment and create a new one.
+</Warning>
+
+### Response
+
+Returns the updated attachment object.
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid update_mask or field values
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User doesn't own the attachment
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Attachment does not exist
+</ResponseField>
+
+---
+
+## Delete Attachment
+
+<Note>
+Deletes an attachment and its associated file. This operation is permanent and cannot be undone.
+</Note>
+
+```bash DELETE /api/v1/attachments/{attachment_id}
+curl -X DELETE https://your-memos-instance.com/api/v1/attachments/xyz789 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="attachment_id" type="string" required>
+  The ID of the attachment to delete
+</ParamField>
+
+### Response
+
+Returns empty response on success.
+
+### Error Responses
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User doesn't own the attachment
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Attachment does not exist
+</ResponseField>
+
+---
+
+## Downloading Files
+
+<Note>
+To download the actual file content, use the file server endpoint (separate from the API).
+</Note>
+
+```bash GET /file/{attachment_id}/{filename}
+curl -O https://your-memos-instance.com/file/xyz789/document.pdf
+```
+
+This endpoint:
+- Returns the raw file content with appropriate `Content-Type` header
+- Supports range requests for streaming large files
+- Sets `Content-Disposition` header for proper filename handling
+- Works without authentication for attachments linked to public memos
+
+---
+
+## Thumbnail Generation
+
+<Note>
+Thumbnails are automatically generated for supported image formats.
+</Note>
+
+### Supported Formats
+
+- `image/png`
+- `image/jpeg`
+
+Thumbnails are:
+- Generated on-demand when first requested
+- Cached in `.thumbnail_cache/` directory
+- Limited to 3 concurrent generation operations
+- Automatically sized (typically 512px width, maintaining aspect ratio)
+
+### Accessing Thumbnails
+
+```bash
+curl https://your-memos-instance.com/file/xyz789/image.png?thumbnail=1
+```
+
+Add `?thumbnail=1` query parameter to request the thumbnail version.
+
+---
+
+## Storage Backends
+
+### Local Storage (Default)
+
+Attachments are stored in the data directory:
+```
+{MEMOS_DATA}/assets/{attachment_id}
+```
+
+### S3-Compatible Storage
+
+Configure via instance storage settings to use:
+- Amazon S3
+- MinIO
+- Cloudflare R2
+- Any S3-compatible service
+
+S3 configuration includes:
+- Automatic pre-signed URL generation
+- Configurable expiration times
+- Support for custom endpoints
+- Bucket and region configuration
+
+---
+
+## Common MIME Types
+
+### Images
+- `image/png` - PNG images
+- `image/jpeg` - JPEG images
+- `image/gif` - GIF animations
+- `image/webp` - WebP images
+- `image/svg+xml` - SVG vector graphics
+
+### Documents
+- `application/pdf` - PDF documents
+- `application/msword` - Microsoft Word (.doc)
+- `application/vnd.openxmlformats-officedocument.wordprocessingml.document` - Word (.docx)
+- `text/plain` - Plain text files
+- `text/markdown` - Markdown files
+
+### Audio/Video
+- `audio/mpeg` - MP3 audio
+- `audio/wav` - WAV audio
+- `video/mp4` - MP4 video
+- `video/webm` - WebM video
+
+### Archives
+- `application/zip` - ZIP archives
+- `application/x-tar` - TAR archives
+- `application/gzip` - GZIP compressed files
+
+---
+
+## Best Practices
+
+### File Naming
+- Use descriptive filenames with proper extensions
+- Avoid special characters that may cause issues on different filesystems
+- Keep filenames reasonably short (under 255 characters)
+
+### Performance
+- Use thumbnails for image previews instead of loading full-size images
+- Consider using external_link for very large files hosted elsewhere
+- Implement pagination when listing many attachments
+
+### Security
+- Attachments inherit visibility from their associated memo
+- EXIF data is automatically stripped from images to protect privacy
+- Validate file types on upload to prevent malicious content
+
+### Storage Management
+- Regularly review and delete unused attachments
+- Configure S3 lifecycle policies for automatic archival/deletion
+- Monitor storage usage through instance settings

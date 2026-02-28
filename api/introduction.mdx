@@ -1,0 +1,240 @@
+---
+title: API Introduction
+description: Overview of Memos API, protocols, and base URLs
+---
+
+## Overview
+
+Memos provides a comprehensive API for programmatic access to all features. The API is built on **Protocol Buffers (protobuf)** and exposed through two protocols:
+
+- **Connect RPC** - Type-safe RPC protocol for browser clients
+- **gRPC-Gateway (REST)** - Standard HTTP/JSON for external tools and integrations
+
+Both protocols share the same service implementations and provide identical functionality.
+
+## Protocols
+
+### Connect RPC
+
+Connect RPC is used by the Memos web frontend for type-safe, efficient communication.
+
+**Key Features:**
+- Binary protocol based on Protocol Buffers
+- Full TypeScript type safety
+- Supports browser streaming
+- Uses HTTP/2 when available
+
+**Base Path:**
+```
+/memos.api.v1.*
+```
+
+**Example Service Path:**
+```
+/memos.api.v1.MemoService/CreateMemo
+/memos.api.v1.UserService/GetUser
+/memos.api.v1.AuthService/SignIn
+```
+
+**Interceptor Chain:**
+Connect requests pass through these interceptors in order:
+1. **Metadata Interceptor** - Converts HTTP headers to gRPC metadata
+2. **Logging Interceptor** - Logs requests and responses
+3. **Recovery Interceptor** - Handles panics gracefully
+4. **Auth Interceptor** - Validates authentication tokens
+
+See: `server/router/api/v1/connect_interceptors.go:177-227`
+
+### gRPC-Gateway (REST)
+
+The REST API provides standard HTTP/JSON endpoints for easy integration with external tools, scripts, and third-party services.
+
+**Key Features:**
+- Standard HTTP/1.1 with JSON payloads
+- RESTful resource paths
+- Works with any HTTP client (curl, Postman, etc.)
+- OpenAPI/Swagger compatible
+
+**Base Path:**
+```
+/api/v1/*
+```
+
+**Example Endpoints:**
+```
+POST   /api/v1/auth/signin
+GET    /api/v1/auth/me
+GET    /api/v1/memos
+POST   /api/v1/memos
+GET    /api/v1/users/{id}
+```
+
+See: `server/router/api/v1/v1.go:52-96`
+
+## Base URLs
+
+### Default Development
+
+```
+http://localhost:8081
+```
+
+### Production Instance
+
+The base URL depends on your instance configuration. Set via:
+
+**Environment Variable:**
+```bash
+export MEMOS_INSTANCE_URL="https://memos.example.com"
+```
+
+**Command Line Flag:**
+```bash
+memos --instance-url https://memos.example.com
+```
+
+**Configuration File:**
+```bash
+memos --config /path/to/config.yaml
+```
+
+See: `cmd/memos/main.go:36-107`
+
+## API Services
+
+The Memos API is organized into logical services:
+
+| Service | Description | Proto Definition |
+|---------|-------------|------------------|
+| **AuthService** | Authentication and session management | `proto/api/v1/auth_service.proto` |
+| **UserService** | User profiles, settings, and access tokens | `proto/api/v1/user_service.proto` |
+| **MemoService** | Create, read, update, delete memos | `proto/api/v1/memo_service.proto` |
+| **AttachmentService** | Upload and manage file attachments | `proto/api/v1/attachment_service.proto` |
+| **ShortcutService** | Memo filters and saved searches | `proto/api/v1/shortcut_service.proto` |
+| **ActivityService** | Activity feed and audit logs | `proto/api/v1/activity_service.proto` |
+| **InstanceService** | Instance configuration and settings | `proto/api/v1/instance_service.proto` |
+| **IdentityProviderService** | SSO and OAuth2 providers | `proto/api/v1/idp_service.proto` |
+
+## Public Endpoints
+
+Most API endpoints require authentication. The following endpoints are public and accessible without credentials:
+
+**Auth Service:**
+- `/memos.api.v1.AuthService/SignIn` - User login
+- `/memos.api.v1.AuthService/RefreshToken` - Token refresh
+
+**Instance Service:**
+- `/memos.api.v1.InstanceService/GetInstanceProfile` - Instance info
+- `/memos.api.v1.InstanceService/GetInstanceSetting` - Public settings
+
+**User Service:**
+- `/memos.api.v1.UserService/CreateUser` - First user registration
+- `/memos.api.v1.UserService/GetUser` - Public user profiles
+- `/memos.api.v1.UserService/GetUserAvatar` - User avatars
+- `/memos.api.v1.UserService/GetUserStats` - User statistics
+- `/memos.api.v1.UserService/ListAllUserStats` - All user stats
+- `/memos.api.v1.UserService/SearchUsers` - User search
+
+**Memo Service:**
+- `/memos.api.v1.MemoService/GetMemo` - Public memos (visibility filtered)
+- `/memos.api.v1.MemoService/ListMemos` - Public memo list
+- `/memos.api.v1.MemoService/ListMemoComments` - Public comments
+
+**Identity Provider Service:**
+- `/memos.api.v1.IdentityProviderService/ListIdentityProviders` - SSO providers
+
+See: `server/router/api/v1/acl_config.go:11-34`
+
+## Error Handling
+
+The API uses gRPC status codes for error responses:
+
+| Code | Status | Description |
+|------|--------|-------------|
+| 0 | OK | Success |
+| 3 | INVALID_ARGUMENT | Invalid request parameters |
+| 5 | NOT_FOUND | Resource not found |
+| 7 | PERMISSION_DENIED | Insufficient permissions |
+| 13 | INTERNAL | Server error |
+| 16 | UNAUTHENTICATED | Authentication required or invalid |
+
+**REST Error Format:**
+```json
+{
+  "code": 16,
+  "message": "authentication required"
+}
+```
+
+**HTTP Status Mapping:**
+- `UNAUTHENTICATED` → 401 Unauthorized
+- `PERMISSION_DENIED` → 403 Forbidden
+- `NOT_FOUND` → 404 Not Found
+- `INVALID_ARGUMENT` → 400 Bad Request
+- `INTERNAL` → 500 Internal Server Error
+
+## CORS Configuration
+
+The API includes CORS middleware for cross-origin requests:
+
+**gRPC-Gateway CORS:**
+```go
+AllowOrigins: []string{"*"}
+```
+
+**Connect RPC CORS:**
+```go
+UnsafeAllowOriginFunc: func(origin string) bool {
+    return true  // Allows all origins
+}
+AllowMethods: ["GET", "POST", "OPTIONS"]
+AllowHeaders: ["*"]
+AllowCredentials: true
+```
+
+<Warning>
+The default CORS configuration allows all origins for development. **Configure proper CORS restrictions for production deployments** using a reverse proxy (nginx, Caddy) or custom middleware.
+</Warning>
+
+See: `server/router/api/v1/v1.go:115-143`
+
+## Rate Limiting
+
+Memos does not implement rate limiting at the application level. For production deployments:
+
+- Use a reverse proxy (nginx, Caddy, Traefik) for rate limiting
+- Implement API gateway rate limits
+- Monitor usage via activity logs
+
+## API Versioning
+
+The current API version is **v1**. Breaking changes will be introduced in future versions (v2, v3) while maintaining backward compatibility:
+
+- Proto definitions use semantic versioning
+- New fields are added as optional to maintain compatibility
+- Deprecated fields are marked but not removed
+- Major version changes introduce new service paths
+
+**Version Detection:**
+```bash
+curl http://localhost:8081/api/v1/instance/profile
+```
+
+```json
+{
+  "version": "0.28.0",
+  "demo": false,
+  "instance_url": "http://localhost:8081"
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn about JWT tokens, Personal Access Tokens, and session management
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/reference">
+    Explore detailed endpoint documentation and examples
+  </Card>
+</CardGroup>

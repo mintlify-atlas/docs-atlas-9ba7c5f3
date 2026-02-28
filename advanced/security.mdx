@@ -1,0 +1,542 @@
+---
+title: Security Best Practices
+description: Secure your Memos installation with authentication, encryption, and hardening techniques
+---
+
+## Overview
+
+Memos implements multiple security layers to protect your data. This guide covers authentication mechanisms, security hardening, and best practices for production deployments.
+
+## Authentication System
+
+Memos uses a three-tier authentication system:
+
+### 1. JWT Access Tokens (Short-lived)
+
+**Purpose**: Active user sessions  
+**Lifetime**: 15 minutes  
+**Storage**: Client-side memory  
+**Validation**: Stateless (signature only)
+
+```go
+// Token structure (server/auth/token.go:71-77)
+type AccessTokenClaims struct {
+    Type     string // "access"
+    Role     string // User role (admin, user)
+    Status   string // User status (active, archived)
+    Username string // Username for display
+    jwt.RegisteredClaims
+}
+```
+
+**Algorithm**: HS256 (HMAC-SHA256)  
+**Secret**: Auto-generated UUID on first run
+
+**Generation** (server/auth/token.go:133-160):
+```go
+token, expiresAt, err := GenerateAccessTokenV2(
+    userID,
+    username,
+    role,
+    status,
+    []byte(secret),
+)
+```
+
+**Validation** (server/auth/authenticator.go:39-58):
+```go
+claims, err := authenticator.AuthenticateByAccessTokenV2(accessToken)
+// Returns user claims without database query (stateless)
+```
+
+### 2. JWT Refresh Tokens (Long-lived)
+
+**Purpose**: Session persistence  
+**Lifetime**: 30 days  
+**Storage**: HTTP-only cookie  
+**Validation**: Stateful (database lookup for revocation)
+
+```go
+// Token structure (server/auth/token.go:79-85)
+type RefreshTokenClaims struct {
+    Type    string // "refresh"
+    TokenID string // Unique token ID for revocation
+    jwt.RegisteredClaims
+}
+```
+
+**Cookie Settings**:
+```go
+http.Cookie{
+    Name:     "memos_refresh",
+    Value:    refreshToken,
+    Path:     "/",
+    HttpOnly: true,           // Prevents XSS access
+    SameSite: http.SameSiteLaxMode, // CSRF protection
+    Secure:   true,           // HTTPS only (production)
+    MaxAge:   30 * 24 * 3600, // 30 days
+}
+```
+
+**Revocation**: Tokens stored in `user_refresh_token` table  
+**Validation** (server/auth/authenticator.go:60-99):
+```go
+user, tokenID, err := authenticator.AuthenticateByRefreshToken(ctx, refreshToken)
+// Checks:
+// 1. Token signature valid
+// 2. Token exists in database
+// 3. Token not expired
+// 4. User not archived
+```
+
+### 3. Personal Access Tokens (PAT)
+
+**Purpose**: API integrations, automation  
+**Lifetime**: User-defined (or never expires)  
+**Format**: `memos_pat_<random32chars>`  
+**Storage**: SHA-256 hash in database
+
+**Generation** (server/auth/token.go:189-203):
+```go
+// Generate random PAT
+func GeneratePersonalAccessToken() string {
+    randomStr, _ := util.RandomString(32)
+    return PersonalAccessTokenPrefix + randomStr
+}
+
+// Store as SHA-256 hash
+func HashPersonalAccessToken(token string) string {
+    hash := sha256.Sum256([]byte(token))
+    return hex.EncodeToString(hash[:])
+}
+```
+
+**Security Features**:
+- Only hash stored in database (token visible once at creation)
+- Per-token expiration dates
+- Last used timestamp tracking
+- Can be revoked individually
+
+**Validation** (server/auth/authenticator.go:101-124):
+```go
+user, pat, err := authenticator.AuthenticateByPAT(ctx, token)
+// Checks:
+// 1. Token has correct prefix
+// 2. SHA-256 hash matches database
+// 3. Token not expired
+// 4. User not archived
+```
+
+### Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Auth
+    participant DB
+    
+    Client->>API: Request with Bearer token
+    API->>Auth: Authenticate()
+    
+    alt Access Token (JWT)
+        Auth->>Auth: Verify signature
+        Auth-->>API: Return claims (stateless)
+    else Personal Access Token
+        Auth->>DB: Query by hash
+        DB-->>Auth: Return user + PAT
+        Auth->>DB: Update last_used
+        Auth-->>API: Return user
+    else Refresh Token (cookie)
+        Auth->>DB: Verify token ID
+        DB-->>Auth: Return user
+        Auth-->>API: Return user
+    end
+    
+    API-->>Client: Response
+```
+
+See: server/auth/authenticator.go:133-165
+
+## Secret Key Management
+
+### Secret Generation
+
+Memos auto-generates a secret key on first run:
+
+```go
+// server/server.go:166-187
+func (s *Server) getOrUpsertInstanceBasicSetting(ctx context.Context) {
+    instanceBasicSetting, _ := s.Store.GetInstanceBasicSetting(ctx)
+    
+    if instanceBasicSetting.SecretKey == "" {
+        instanceBasicSetting.SecretKey = uuid.NewString()
+        // Store in database
+        s.Store.UpsertInstanceSetting(ctx, instanceBasicSetting)
+    }
+    
+    return instanceBasicSetting
+}
+```
+
+**Storage**: `system_setting` table, key `BASIC`, field `secret_key`
+
+### Demo Mode Exception
+
+```go
+secret := "usememos"
+if !profile.Demo {
+    secret = instanceBasicSetting.SecretKey
+}
+s.Secret = secret
+```
+
+**Warning**: Demo mode uses fixed secret `"usememos"` - never use in production!
+
+### Rotating Secret Keys
+
+**Current limitation**: Memos does not support key rotation. Changing the secret will invalidate all existing JWT tokens.
+
+**Future enhancement** (server/auth/token.go:32-33):
+```go
+// KeyID is "v1" to allow future rotation
+// If signing changes, add "v2", "v3", etc.
+```
+
+## Security Headers
+
+Configure reverse proxy (nginx/Caddy) to add security headers:
+
+### Nginx Configuration
+
+```nginx
+location / {
+    proxy_pass http://localhost:8081;
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;" always;
+    
+    # HSTS (uncomment after testing HTTPS)
+    # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+}
+```
+
+### Caddy Configuration
+
+```caddyfile
+memos.example.com {
+    reverse_proxy localhost:8081
+    
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;"
+        
+        # HSTS (enabled by default in Caddy)
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}
+```
+
+## HTTPS/TLS Encryption
+
+**Recommendation**: Always use HTTPS in production.
+
+Memos does not have built-in TLS support. Use a reverse proxy:
+
+### Option 1: Caddy (Automatic HTTPS)
+
+```caddyfile
+memos.example.com {
+    reverse_proxy localhost:8081
+}
+```
+
+Caddy automatically obtains and renews Let's Encrypt certificates.
+
+### Option 2: Nginx + Certbot
+
+```bash
+# Install Certbot
+sudo apt install certbot python3-certbot-nginx
+
+# Obtain certificate
+sudo certbot --nginx -d memos.example.com
+
+# Auto-renewal is configured via systemd timer
+```
+
+### Option 3: Cloudflare Tunnel
+
+Cloudflare Tunnel provides HTTPS without exposing ports:
+
+```bash
+# Install cloudflared
+wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared-linux-amd64.deb
+
+# Authenticate
+cloudflared tunnel login
+
+# Create tunnel
+cloudflared tunnel create memos
+
+# Route DNS
+cloudflared tunnel route dns memos memos.example.com
+
+# Run tunnel
+cloudflared tunnel run memos
+```
+
+See: [Deploy with Cloudflare](https://www.cloudflare.com/application-services/products/cdn/)
+
+## CORS Configuration
+
+**Default behavior**: Memos allows all origins.
+
+For production, restrict CORS to your domain:
+
+**Note**: Currently not configurable via environment variables. Modify source:
+
+```go
+// server/router/api/v1/v1.go
+func (s *APIV1Service) RegisterGateway(ctx context.Context, e *echo.Echo) error {
+    cors := cors.New(cors.Config{
+        AllowOrigins: []string{"https://memos.example.com"},
+        AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
+        AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
+    })
+    e.Use(cors)
+}
+```
+
+## Public Endpoint Access Control
+
+Some endpoints are public (no authentication required):
+
+**Public endpoints** (server/router/api/v1/acl_config.go:11-34):
+```go
+var publicMethods = []string{
+    "/memos.api.v1.AuthService/GetAuthStatus",
+    "/memos.api.v1.AuthService/SignIn",
+    "/memos.api.v1.AuthService/SignUp",
+    "/memos.api.v1.UserService/GetUser",
+    "/memos.api.v1.UserService/ListUserAccessTokens",
+    "/memos.api.v1.MemoService/ListMemos",
+    "/memos.api.v1.MemoService/GetMemo",
+    // ...
+}
+```
+
+**Access control** (server/router/api/v1/connect_interceptors.go):
+- Public methods: Allow without authentication
+- Protected methods: Require valid token (JWT or PAT)
+- Admin-only methods: Check user role
+
+## Database Security
+
+### SQLite
+
+```bash
+# Set correct file permissions
+chmod 600 ~/.memos/memos_prod.db
+chown memos:memos ~/.memos/memos_prod.db
+
+# Encrypt at rest (filesystem level)
+# Use LUKS, eCryptfs, or VeraCrypt
+```
+
+**SQL Injection Prevention**:  
+All queries use parameterized statements:
+
+```go
+// Safe: Parameterized query
+stmt := "SELECT * FROM memo WHERE id = ?"
+row := db.QueryRowContext(ctx, stmt, memoID)
+
+// NEVER: String concatenation
+// stmt := "SELECT * FROM memo WHERE id = " + memoID  // DON'T DO THIS
+```
+
+See: store/db/sqlite/memo.go
+
+### MySQL/PostgreSQL
+
+```sql
+-- Create dedicated user with minimal privileges
+CREATE USER 'memos_user'@'localhost' IDENTIFIED BY 'strong_random_password';
+GRANT SELECT, INSERT, UPDATE, DELETE ON memos_db.* TO 'memos_user'@'localhost';
+FLUSH PRIVILEGES;
+
+-- Enable SSL/TLS for connections
+-- MySQL:
+REQUIRE SSL;
+
+-- PostgreSQL (postgresql.conf):
+ssl = on
+ssl_cert_file = '/path/to/server.crt'
+ssl_key_file = '/path/to/server.key'
+```
+
+**Connection String with SSL**:
+```bash
+# MySQL
+export MEMOS_DSN="memos_user:password@tcp(localhost:3306)/memos_db?tls=true"
+
+# PostgreSQL
+export MEMOS_DSN="postgres://memos_user:password@localhost:5432/memos_db?sslmode=require"
+```
+
+## Password Security
+
+**Hashing algorithm**: Not directly visible in provided code, but follows industry standards.
+
+**Best practices**:
+- Enforce strong passwords (8+ chars, mixed case, numbers, symbols)
+- Rate limit login attempts (not built-in, use reverse proxy)
+- Enable 2FA (future enhancement)
+
+## Rate Limiting
+
+Memos does not have built-in rate limiting. Implement at reverse proxy level:
+
+### Nginx Rate Limiting
+
+```nginx
+http {
+    # Define rate limit zone (10MB = ~160k IPs)
+    limit_req_zone $binary_remote_addr zone=memos_limit:10m rate=10r/s;
+    
+    server {
+        location / {
+            limit_req zone=memos_limit burst=20 nodelay;
+            limit_req_status 429;
+            
+            proxy_pass http://localhost:8081;
+        }
+    }
+}
+```
+
+### Caddy Rate Limiting
+
+```caddyfile
+memos.example.com {
+    rate_limit {
+        zone memos {
+            key {remote_host}
+            events 10
+            window 1s
+        }
+    }
+    
+    reverse_proxy localhost:8081
+}
+```
+
+## Firewall Configuration
+
+### UFW (Ubuntu)
+
+```bash
+# Allow SSH
+sudo ufw allow 22/tcp
+
+# Allow HTTPS
+sudo ufw allow 443/tcp
+
+# Block direct access to Memos (only via reverse proxy)
+sudo ufw deny 8081/tcp
+
+# Enable firewall
+sudo ufw enable
+```
+
+### firewalld (RHEL/CentOS)
+
+```bash
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --permanent --add-service=ssh
+sudo firewall-cmd --reload
+```
+
+## Content Security Policy (CSP)
+
+Restrict resource loading to prevent XSS:
+
+```nginx
+add_header Content-Security-Policy "
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' 'unsafe-eval';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' data: https:;
+    font-src 'self' data:;
+    connect-src 'self';
+    frame-ancestors 'self';
+    base-uri 'self';
+    form-action 'self';
+" always;
+```
+
+**Note**: `'unsafe-inline'` and `'unsafe-eval'` are required for React. Consider nonce-based CSP for stricter security.
+
+## Security Checklist
+
+- [ ] Use HTTPS in production (reverse proxy)
+- [ ] Set strong secret key (auto-generated, do not use demo mode)
+- [ ] Restrict database access (dedicated user, minimal privileges)
+- [ ] Enable database encryption at rest
+- [ ] Configure firewall (block direct access to Memos port)
+- [ ] Add security headers (X-Frame-Options, CSP, etc.)
+- [ ] Implement rate limiting (reverse proxy)
+- [ ] Regular security updates (Memos + OS + dependencies)
+- [ ] Enable audit logging (reverse proxy access logs)
+- [ ] Backup encryption (encrypt backup files)
+- [ ] Use Personal Access Tokens for API access (not user passwords)
+- [ ] Rotate PATs regularly
+- [ ] Monitor failed login attempts
+- [ ] Disable demo mode in production
+- [ ] Review public endpoint access control
+
+## Vulnerability Reporting
+
+If you discover a security vulnerability in Memos:
+
+1. **Do NOT** open a public GitHub issue
+2. Email security concerns to: [security@usememos.com](mailto:security@usememos.com)
+3. Include:
+   - Description of vulnerability
+   - Steps to reproduce
+   - Potential impact
+   - Suggested fix (if available)
+
+## Security Updates
+
+Stay informed about security updates:
+
+- Watch the [Memos GitHub repository](https://github.com/usememos/memos)
+- Subscribe to [release notifications](https://github.com/usememos/memos/releases)
+- Check [CHANGELOG](https://github.com/usememos/memos/blob/main/CHANGELOG.md) for security fixes
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="sitemap" href="/advanced/architecture">
+    Understand Memos system architecture
+  </Card>
+  <Card title="Backup & Restore" icon="database" href="/advanced/backup-and-restore">
+    Backup strategies for disaster recovery
+  </Card>
+  <Card title="Performance Tuning" icon="gauge" href="/advanced/performance-tuning">
+    Optimize for production workloads
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/installation/docker">
+    Deployment guides for various platforms
+  </Card>
+</CardGroup>

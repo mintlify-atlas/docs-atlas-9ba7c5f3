@@ -1,0 +1,375 @@
+---
+title: Activities
+description: API endpoints for activity tracking and notifications in Memos
+---
+
+## Overview
+
+Activities track significant events in Memos, such as memo comments. They serve as an audit log and power the notification system. Activities are automatically created by the system and cannot be directly created or modified by users.
+
+## List Activities
+
+<Note>
+Retrieves a paginated list of activities. Activities are returned in reverse chronological order (newest first).
+</Note>
+
+```bash GET /api/v1/activities
+curl https://your-memos-instance.com/api/v1/activities?page_size=50 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Query Parameters
+
+<ParamField query="page_size" type="integer">
+  Maximum number of activities to return. Default: 100, Maximum: 1000
+  
+  If not specified or set to 0, defaults to 100 activities.
+</ParamField>
+
+<ParamField query="page_token" type="string">
+  Token for retrieving the next page of results (from previous response)
+</ParamField>
+
+### Response
+
+<ResponseField name="activities" type="array">
+  Array of activity objects
+  
+  <Expandable title="activity object">
+    <ResponseField name="name" type="string">
+      The resource name of the activity. Format: `activities/{activity_id}`
+    </ResponseField>
+    
+    <ResponseField name="creator" type="string">
+      The user who triggered the activity. Format: `users/{user_id}`
+    </ResponseField>
+    
+    <ResponseField name="type" type="string">
+      The type of activity:
+      - `MEMO_COMMENT` - A user commented on a memo
+      - `TYPE_UNSPECIFIED` - Unknown or system activity
+    </ResponseField>
+    
+    <ResponseField name="level" type="string">
+      The severity level of the activity:
+      - `INFO` - Informational (default)
+      - `WARN` - Warning
+      - `ERROR` - Error
+      - `LEVEL_UNSPECIFIED` - Unknown
+    </ResponseField>
+    
+    <ResponseField name="create_time" type="timestamp">
+      When the activity occurred
+    </ResponseField>
+    
+    <ResponseField name="payload" type="object">
+      Activity-specific details. Structure depends on the activity type.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_page_token" type="string">
+  Token for retrieving the next page. Omitted if no more pages.
+</ResponseField>
+
+### Activity Filtering
+
+<Note>
+Activities referencing deleted content (like deleted memos) are automatically filtered out of the response rather than causing errors.
+</Note>
+
+### Example Response
+
+```json
+{
+  "activities": [
+    {
+      "name": "activities/42",
+      "creator": "users/101",
+      "type": "MEMO_COMMENT",
+      "level": "INFO",
+      "create_time": "2024-01-15T14:30:00Z",
+      "payload": {
+        "memo_comment": {
+          "memo": "memos/comment123",
+          "related_memo": "memos/original456"
+        }
+      }
+    },
+    {
+      "name": "activities/41",
+      "creator": "users/102",
+      "type": "MEMO_COMMENT",
+      "level": "INFO",
+      "create_time": "2024-01-15T10:15:00Z",
+      "payload": {
+        "memo_comment": {
+          "memo": "memos/comment789",
+          "related_memo": "memos/original456"
+        }
+      }
+    }
+  ],
+  "next_page_token": "CgRhYmNk"
+}
+```
+
+---
+
+## Get Activity
+
+<Note>
+Retrieves a single activity by its ID.
+</Note>
+
+```bash GET /api/v1/activities/{activity_id}
+curl https://your-memos-instance.com/api/v1/activities/42 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="activity_id" type="integer" required>
+  The numeric ID of the activity to retrieve. Format: `activities/{id}`
+</ParamField>
+
+### Response
+
+Returns an activity object (same structure as in List Activities).
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid activity name format
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Activity does not exist or references deleted content
+</ResponseField>
+
+<ResponseField name="500" type="error">
+  **Internal Error** - Failed to retrieve activity from database
+</ResponseField>
+
+---
+
+## Activity Types
+
+### MEMO_COMMENT
+
+Triggered when a user creates a comment on a memo.
+
+**Payload Structure:**
+
+<ResponseField name="memo_comment" type="object">
+  Details about the comment activity
+  
+  <Expandable title="properties">
+    <ResponseField name="memo" type="string">
+      The resource name of the comment memo. Format: `memos/{memo_id}`
+      
+      This is the newly created comment itself.
+    </ResponseField>
+    
+    <ResponseField name="related_memo" type="string">
+      The resource name of the memo being commented on. Format: `memos/{memo_id}`
+      
+      This is the original memo that received the comment.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example:**
+
+```json
+{
+  "name": "activities/42",
+  "creator": "users/101",
+  "type": "MEMO_COMMENT",
+  "level": "INFO",
+  "create_time": "2024-01-15T14:30:00Z",
+  "payload": {
+    "memo_comment": {
+      "memo": "memos/comment123",
+      "related_memo": "memos/original456"
+    }
+  }
+}
+```
+
+**Use Cases:**
+
+- Notifications: Alert the original memo's author about new comments
+- Activity feed: Show recent commenting activity across the platform
+- Analytics: Track engagement on specific memos
+
+---
+
+## Activity Levels
+
+<Note>
+Activity levels indicate the importance or severity of an activity. Currently, most activities use the INFO level.
+</Note>
+
+### INFO
+
+Standard informational activities:
+- User comments on memos
+- Regular user interactions
+- Non-critical system events
+
+### WARN
+
+Warning-level activities (future use):
+- Approaching resource limits
+- Deprecated feature usage
+- Non-breaking issues
+
+### ERROR
+
+Error-level activities (future use):
+- Failed operations
+- System errors affecting users
+- Critical issues requiring attention
+
+---
+
+## Integration with Notifications
+
+<Note>
+Activities are closely tied to the notification system. When certain activities occur, notifications are automatically created for relevant users.
+</Note>
+
+### Activity → Notification Mapping
+
+**MEMO_COMMENT Activity:**
+
+When a user comments on someone else's memo:
+
+1. An activity is created with type `MEMO_COMMENT`
+2. A notification is sent to the original memo's creator
+3. The notification links to the activity via `activity_id`
+
+**Accessing Related Notifications:**
+
+See [User Notifications](/api/users#user-notifications) for:
+- Listing user notifications
+- Marking notifications as read
+- Filtering notifications by activity type
+
+---
+
+## Implementation Details
+
+### Automatic Creation
+
+Activities are created automatically by the system:
+
+- **Comment Creation**: When `CreateMemoComment` is called
+- **System Events**: When significant system events occur
+- **Background Jobs**: From scheduled tasks and background workers
+
+Users cannot directly create activities via the API.
+
+### Storage
+
+Activities are stored in the `activity` table with:
+
+- Unique auto-incrementing ID
+- Creator ID (user who triggered the activity)
+- Type enum (e.g., MEMO_COMMENT)
+- Level enum (INFO, WARN, ERROR)
+- Created timestamp
+- Payload (JSON-serialized activity-specific data)
+
+### Retention
+
+Activities are retained indefinitely by default. Consider implementing cleanup policies for:
+
+- Activities older than X months
+- Activities referencing deleted content
+- Low-priority INFO-level activities
+
+### Performance Considerations
+
+- Activities are indexed by creator_id and create_time for fast queries
+- Pagination is strongly recommended for listing activities
+- The system gracefully handles activities referencing deleted content
+
+---
+
+## Use Cases
+
+### Audit Log
+
+Track important user actions:
+
+```bash
+curl "https://your-memos-instance.com/api/v1/activities?page_size=100" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+Filter in your application:
+- By user: Check `creator` field
+- By date: Parse `create_time` field
+- By type: Filter on `type` field
+
+### User Activity Feed
+
+Show recent activity for a specific user:
+
+1. List activities
+2. Filter by `creator` matching the user's ID
+3. Display in a timeline view
+
+### Engagement Analytics
+
+Track engagement metrics:
+
+- Count MEMO_COMMENT activities to measure interaction
+- Analyze activity timestamps for usage patterns
+- Identify most active users or most commented memos
+
+### Real-time Updates
+
+Poll for new activities:
+
+```bash
+# Get the latest activity ID
+latest_id=$(curl "https://your-memos-instance.com/api/v1/activities?page_size=1" | jq -r '.activities[0].name')
+
+# Poll for newer activities
+while true; do
+  curl "https://your-memos-instance.com/api/v1/activities" \
+    | jq -r '.activities[] | select(.name > "'$latest_id'")'  
+  sleep 30
+done
+```
+
+---
+
+## Best Practices
+
+### Pagination
+
+- Always use `page_size` to limit results
+- Store and use `next_page_token` for subsequent requests
+- Don't assume all activities fit in one page
+
+### Error Handling
+
+- Handle 404 errors gracefully (activity may reference deleted content)
+- Implement retries for 500-level errors
+- Cache activity data to reduce API calls
+
+### Privacy
+
+- Respect memo visibility when displaying activities
+- Don't expose private memo activities to unauthorized users
+- Filter activities based on user permissions in your application
+
+### Performance
+
+- Use reasonable page sizes (50-100 items)
+- Implement client-side caching for recently fetched activities
+- Consider rate limiting when polling for new activities

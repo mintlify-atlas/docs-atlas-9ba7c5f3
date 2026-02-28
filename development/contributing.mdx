@@ -1,0 +1,565 @@
+---
+title: 'Contribution Guidelines'
+description: 'Learn how to contribute to Memos development'
+---
+
+Thank you for your interest in contributing to Memos! This guide will help you get started with submitting bug reports, feature requests, code contributions, and documentation improvements.
+
+## Ways to Contribute
+
+<CardGroup cols={2}>
+  <Card title="Report Bugs" icon="bug" href="https://github.com/usememos/memos/issues/new?template=bug_report.md">
+    Found a bug? Help us fix it by filing a detailed report.
+  </Card>
+  <Card title="Suggest Features" icon="lightbulb" href="https://github.com/usememos/memos/issues/new?template=feature_request.md">
+    Have an idea? Share it with the community.
+  </Card>
+  <Card title="Submit Code" icon="code" href="https://github.com/usememos/memos/pulls">
+    Fix bugs or implement features through pull requests.
+  </Card>
+  <Card title="Improve Docs" icon="book" href="https://github.com/usememos/dotcom">
+    Help others by improving documentation.
+  </Card>
+</CardGroup>
+
+## Before You Start
+
+<Steps>
+  <Step title="Search existing issues">
+    Check if your bug or feature request has already been reported:
+    - [Open Issues](https://github.com/usememos/memos/issues)
+    - [Closed Issues](https://github.com/usememos/memos/issues?q=is%3Aissue+is%3Aclosed)
+  </Step>
+
+  <Step title="Join the community">
+    Connect with other contributors:
+    - [Discord Server](https://discord.gg/tfPJa4UmAv) - Get help and discuss ideas
+    - [GitHub Discussions](https://github.com/usememos/memos/discussions) - Longer-form conversations
+  </Step>
+
+  <Step title="Set up your development environment">
+    Follow the [development setup guide](/development/setup) to configure your local environment.
+  </Step>
+</Steps>
+
+## Reporting Bugs
+
+Good bug reports help us fix issues faster.
+
+### What to Include
+
+<Accordion title="Bug Report Template">
+  ```markdown
+  **Describe the bug**
+  A clear description of what the bug is.
+
+  **To Reproduce**
+  Steps to reproduce the behavior:
+  1. Go to '...'
+  2. Click on '...'
+  3. Scroll down to '...'
+  4. See error
+
+  **Expected behavior**
+  What you expected to happen.
+
+  **Screenshots**
+  If applicable, add screenshots.
+
+  **Environment:**
+  - OS: [e.g., Ubuntu 22.04]
+  - Browser: [e.g., Chrome 120]
+  - Memos Version: [e.g., 0.22.0]
+  - Deployment Method: [Docker, Binary, Source]
+  - Database: [SQLite, MySQL, PostgreSQL]
+
+  **Additional context**
+  Any other relevant information.
+  ```
+</Accordion>
+
+<Tip>
+  Enable debug mode to get detailed logs:
+  ```bash
+  ./memos --mode dev
+  ```
+</Tip>
+
+## Suggesting Features
+
+We welcome feature suggestions that align with Memos' vision: privacy-first, self-hosted knowledge management.
+
+### What Makes a Good Feature Request
+
+<Steps>
+  <Step title="Describe the problem">
+    Start with the problem you're trying to solve, not the solution.
+
+    ```markdown
+    **Problem**: As a user with 1000+ memos, I struggle to find old notes
+    because the search only matches exact text.
+    ```
+  </Step>
+
+  <Step title="Propose a solution">
+    Suggest how you think it should work.
+
+    ```markdown
+    **Proposed Solution**: Add fuzzy search that matches similar words
+    and suggests corrections for typos.
+    ```
+  </Step>
+
+  <Step title="Consider alternatives">
+    Show you've thought about other approaches.
+
+    ```markdown
+    **Alternatives Considered**:
+    - Full-text search with ranking
+    - Tag-based organization
+    - AI-powered semantic search
+    ```
+  </Step>
+</Steps>
+
+## Contributing Code
+
+### Development Workflow
+
+<Steps>
+  <Step title="Fork and clone">
+    Fork the repository and clone your fork:
+
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/memos.git
+    cd memos
+    git remote add upstream https://github.com/usememos/memos.git
+    ```
+  </Step>
+
+  <Step title="Create a feature branch">
+    ```bash
+    git checkout -b feature/your-feature-name
+    ```
+
+    Branch naming conventions:
+    - `feature/` - New features
+    - `fix/` - Bug fixes
+    - `docs/` - Documentation updates
+    - `refactor/` - Code refactoring
+    - `test/` - Test improvements
+  </Step>
+
+  <Step title="Make your changes">
+    Write code following our conventions (see below).
+
+    Keep commits focused and atomic:
+    ```bash
+    git add <files>
+    git commit -m "feat: add fuzzy search to memo filter"
+    ```
+  </Step>
+
+  <Step title="Write tests">
+    Add tests for your changes:
+
+    ```bash
+    # Backend tests
+    go test ./...
+
+    # Frontend type checking
+    cd web && pnpm lint
+    ```
+  </Step>
+
+  <Step title="Run linters">
+    Ensure code quality:
+
+    ```bash
+    # Go linting
+    golangci-lint run
+
+    # Frontend linting
+    cd web && pnpm lint:fix
+    ```
+  </Step>
+
+  <Step title="Push and create PR">
+    ```bash
+    git push origin feature/your-feature-name
+    ```
+
+    Open a pull request on GitHub with a clear description.
+  </Step>
+</Steps>
+
+### Code Style Guidelines
+
+#### Go Backend
+
+<AccordionGroup>
+  <Accordion title="Error Handling">
+    Use `github.com/pkg/errors` for wrapping:
+
+    ```go
+    import "github.com/pkg/errors"
+
+    func readFile(path string) error {
+        data, err := os.ReadFile(path)
+        if err != nil {
+            return errors.Wrap(err, "failed to read file")
+        }
+        return nil
+    }
+    ```
+
+    Return gRPC errors in services:
+
+    ```go
+    import "google.golang.org/grpc/status"
+
+    if memo == nil {
+        return nil, status.Errorf(codes.NotFound, "memo not found")
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Naming Conventions">
+    - **Packages**: lowercase, single word (`store`, `server`, `plugin`)
+    - **Interfaces**: `Driver`, `Store`, `Service`
+    - **Methods**: PascalCase for exported, camelCase for private
+    - **Constants**: `MixedCaps` (not `SCREAMING_SNAKE_CASE`)
+
+    ```go
+    // Good
+    package store
+
+    type Driver interface {
+        CreateMemo(ctx context.Context, memo *Memo) (*Memo, error)
+    }
+
+    const MaxMemoSize = 1024 * 1024
+
+    // Bad
+    package Store // Wrong: uppercase package
+
+    const MAX_MEMO_SIZE = 1024 * 1024 // Wrong: snake_case
+    ```
+  </Accordion>
+
+  <Accordion title="Comments">
+    All exported functions must have comments:
+
+    ```go
+    // CreateMemo creates a new memo in the database.
+    // It returns an error if the user does not exist.
+    func (s *Store) CreateMemo(ctx context.Context, memo *Memo) (*Memo, error) {
+        // ...
+    }
+    ```
+
+    Use `//` for single-line, `/* */` for multi-line.
+  </Accordion>
+
+  <Accordion title="Imports">
+    Group imports: stdlib, third-party, local:
+
+    ```go
+    import (
+        "context"
+        "fmt"
+
+        "github.com/pkg/errors"
+        "google.golang.org/grpc/codes"
+
+        "github.com/usememos/memos/store"
+    )
+    ```
+
+    Use `goimports` to format:
+    ```bash
+    goimports -w .
+    ```
+  </Accordion>
+</AccordionGroup>
+
+#### TypeScript Frontend
+
+<AccordionGroup>
+  <Accordion title="Component Structure">
+    Use functional components with hooks:
+
+    ```typescript
+    interface MemoCardProps {
+      memo: Memo;
+      onDelete?: (id: number) => void;
+    }
+
+    export const MemoCard: React.FC<MemoCardProps> = ({ memo, onDelete }) => {
+      const handleDelete = useCallback(() => {
+        onDelete?.(memo.id);
+      }, [memo.id, onDelete]);
+
+      return (
+        <div className="memo-card">
+          {/* ... */}
+        </div>
+      );
+    };
+    ```
+  </Accordion>
+
+  <Accordion title="State Management">
+    - **Server state**: React Query hooks
+    - **Client state**: React Context
+    - **Component state**: `useState` for local UI state
+
+    ```typescript
+    // Server state - use React Query
+    import { useMemos } from '@/hooks/useMemoQueries';
+
+    const { data: memos } = useMemos({ userId: user.id });
+
+    // Client state - use Context
+    import { useAuth } from '@/contexts/AuthContext';
+
+    const { user } = useAuth();
+
+    // Local state - useState
+    const [isOpen, setIsOpen] = useState(false);
+    ```
+  </Accordion>
+
+  <Accordion title="Styling">
+    Use Tailwind CSS classes:
+
+    ```typescript
+    <div className="flex items-center gap-2 rounded-lg bg-gray-100 p-4 dark:bg-gray-800">
+      {/* content */}
+    </div>
+    ```
+
+    Use `clsx` and `tailwind-merge` for conditional classes:
+
+    ```typescript
+    import { cn } from '@/lib/utils';
+
+    <button className={cn(
+      "rounded px-4 py-2",
+      isPrimary && "bg-blue-500 text-white",
+      isDisabled && "opacity-50 cursor-not-allowed"
+    )}>
+      Click me
+    </button>
+    ```
+  </Accordion>
+
+  <Accordion title="Imports">
+    Use absolute imports with `@/` alias:
+
+    ```typescript
+    import { Button } from '@/components/ui/Button';
+    import { useMemos } from '@/hooks/useMemoQueries';
+    import { cn } from '@/lib/utils';
+    ```
+
+    Biome auto-organizes imports:
+    ```bash
+    pnpm lint:fix
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Commit Message Format
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style (formatting, no logic change)
+- `refactor`: Code refactoring
+- `test`: Add or update tests
+- `chore`: Build process, dependencies
+
+**Examples:**
+
+```bash
+feat(search): add fuzzy matching to memo search
+
+fix(api): resolve nil pointer in memo creation
+
+docs(readme): update installation instructions
+
+refactor(store): simplify memo query builder
+```
+
+## Pull Request Process
+
+### PR Checklist
+
+Before submitting:
+
+- [ ] Code follows style guidelines
+- [ ] Tests pass locally (`go test ./...` and `pnpm lint`)
+- [ ] New tests added for new features
+- [ ] Documentation updated (if needed)
+- [ ] Commit messages follow conventions
+- [ ] PR description explains changes clearly
+
+### PR Description Template
+
+```markdown
+## Description
+Brief description of what this PR does.
+
+## Related Issue
+Fixes #123
+
+## Changes Made
+- Added fuzzy search to memo filter
+- Updated MemoService to support fuzzy matching
+- Added tests for fuzzy search
+
+## Testing
+- [ ] Tested on SQLite
+- [ ] Tested on MySQL
+- [ ] Tested on PostgreSQL
+- [ ] Frontend tests pass
+- [ ] Backend tests pass
+
+## Screenshots (if applicable)
+[Add screenshots of UI changes]
+
+## Breaking Changes
+None / List any breaking changes
+```
+
+### Review Process
+
+1. **Automated checks**: CI runs tests and linters
+2. **Code review**: Maintainers review your code
+3. **Feedback**: Address any requested changes
+4. **Approval**: Once approved, maintainers merge your PR
+
+<Tip>
+  Be patient! Reviews may take a few days. Respond to feedback promptly to speed up the process.
+</Tip>
+
+## Testing Your Changes
+
+See the [Testing Guide](/development/testing) for detailed testing instructions.
+
+Quick checklist:
+
+```bash
+# Backend tests
+go test ./...
+go test -race ./server/...
+
+# Backend linting
+golangci-lint run
+
+# Frontend tests
+cd web
+pnpm lint
+pnpm build
+
+# Protocol buffer validation
+cd proto
+buf lint
+```
+
+## Documentation Contributions
+
+Help improve Memos documentation:
+
+<Steps>
+  <Step title="Fork the docs repo">
+    ```bash
+    git clone https://github.com/usememos/dotcom.git
+    ```
+  </Step>
+
+  <Step title="Make changes">
+    Edit MDX files in the `docs/` directory.
+  </Step>
+
+  <Step title="Preview locally">
+    ```bash
+    npm i -g mint
+    mint dev
+    ```
+
+    Visit `http://localhost:3000`.
+  </Step>
+
+  <Step title="Submit PR">
+    Push changes and open a pull request.
+  </Step>
+</Steps>
+
+## Translation Contributions
+
+Help translate Memos into other languages:
+
+1. Check existing translations: `web/src/locales/`
+2. Copy `en.json` and translate strings
+3. Test the translation in the UI
+4. Submit a PR with your translation file
+
+## Getting Help
+
+Stuck? Here's where to get help:
+
+<CardGroup cols={2}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/tfPJa4UmAv">
+    Real-time help from the community
+  </Card>
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/usememos/memos/discussions">
+    Ask questions and share ideas
+  </Card>
+  <Card title="Documentation" icon="book" href="/">
+    Browse the full documentation
+  </Card>
+  <Card title="Issue Tracker" icon="bug" href="https://github.com/usememos/memos/issues">
+    Search existing issues and bugs
+  </Card>
+</CardGroup>
+
+## Code of Conduct
+
+We are committed to providing a welcoming and inclusive community.
+
+### Our Standards
+
+- **Be respectful**: Treat everyone with respect and kindness
+- **Be constructive**: Provide helpful feedback and suggestions
+- **Be patient**: Remember everyone is learning
+- **Be inclusive**: Welcome newcomers and diverse perspectives
+
+### Unacceptable Behavior
+
+- Harassment, discrimination, or offensive comments
+- Personal attacks or insults
+- Spam or self-promotion
+- Publishing others' private information
+
+## Recognition
+
+Contributors are recognized in:
+
+- GitHub contribution graph
+- Release notes (for significant contributions)
+- Contributors list in README
+
+Thank you for contributing to Memos! Your help makes this project better for everyone.

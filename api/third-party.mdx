@@ -1,0 +1,446 @@
+---
+title: Third-Party Integrations
+description: Connect Memos with external services and identity providers
+icon: plug
+---
+
+Memos supports various third-party integrations for authentication, storage, and other services.
+
+## OAuth 2.0 Identity Providers
+
+Memos supports OAuth 2.0 for single sign-on (SSO) with external identity providers.
+
+### Supported Providers
+
+Any OAuth 2.0-compliant provider can be configured, including:
+
+- GitHub
+- Google
+- GitLab
+- Microsoft Azure AD
+- Okta
+- Auth0
+- Keycloak
+- Custom OAuth 2.0 providers
+
+### OAuth Configuration
+
+Identity providers are configured with the following parameters:
+
+```json
+{
+  "clientId": "your-client-id",
+  "clientSecret": "your-client-secret",
+  "authUrl": "https://provider.com/oauth/authorize",
+  "tokenUrl": "https://provider.com/oauth/token",
+  "userInfoUrl": "https://provider.com/oauth/userinfo",
+  "scopes": ["openid", "profile", "email"],
+  "fieldMapping": {
+    "identifier": "sub",
+    "displayName": "name",
+    "email": "email",
+    "avatarUrl": "picture"
+  }
+}
+```
+
+### Field Mapping
+
+Memos extracts user information from the OAuth provider's response using field mapping:
+
+<ParamField path="identifier" type="string" required>
+  The claim field for unique user identifier (e.g., `sub`, `id`, `username`). **Required**.
+</ParamField>
+
+<ParamField path="displayName" type="string">
+  The claim field for display name (e.g., `name`, `display_name`). Falls back to identifier if not provided.
+</ParamField>
+
+<ParamField path="email" type="string">
+  The claim field for email address (e.g., `email`, `mail`).
+</ParamField>
+
+<ParamField path="avatarUrl" type="string">
+  The claim field for avatar/profile picture URL (e.g., `picture`, `avatar_url`).
+</ParamField>
+
+### PKCE Support
+
+Memos supports Proof Key for Code Exchange (PKCE) for enhanced security in the OAuth flow. When a `code_verifier` is provided during token exchange, it will be included in the request.
+
+### Example: GitHub OAuth
+
+**1. Register OAuth App on GitHub:**
+
+- Go to Settings → Developer settings → OAuth Apps → New OAuth App
+- Set Authorization callback URL: `https://your-memos.com/auth/callback`
+- Copy Client ID and generate Client Secret
+
+**2. Configure in Memos:**
+
+```json
+{
+  "clientId": "your-github-client-id",
+  "clientSecret": "your-github-client-secret",
+  "authUrl": "https://github.com/login/oauth/authorize",
+  "tokenUrl": "https://github.com/login/oauth/access_token",
+  "userInfoUrl": "https://api.github.com/user",
+  "scopes": ["read:user", "user:email"],
+  "fieldMapping": {
+    "identifier": "login",
+    "displayName": "name",
+    "email": "email",
+    "avatarUrl": "avatar_url"
+  }
+}
+```
+
+**3. Test the integration:**
+
+- Navigate to your Memos login page
+- Click "Sign in with OAuth"
+- Authorize with GitHub
+- Memos will create or link the user account
+
+### Example: Google OAuth
+
+**1. Create OAuth credentials in Google Cloud Console:**
+
+- Go to APIs & Services → Credentials
+- Create OAuth 2.0 Client ID
+- Set Authorized redirect URI: `https://your-memos.com/auth/callback`
+
+**2. Configure in Memos:**
+
+```json
+{
+  "clientId": "your-google-client-id.apps.googleusercontent.com",
+  "clientSecret": "your-google-client-secret",
+  "authUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+  "tokenUrl": "https://oauth2.googleapis.com/token",
+  "userInfoUrl": "https://www.googleapis.com/oauth2/v2/userinfo",
+  "scopes": ["openid", "profile", "email"],
+  "fieldMapping": {
+    "identifier": "email",
+    "displayName": "name",
+    "email": "email",
+    "avatarUrl": "picture"
+  }
+}
+```
+
+## S3-Compatible Storage
+
+Memos supports S3-compatible object storage for attachments and media files.
+
+### Supported Providers
+
+- Amazon S3
+- MinIO
+- DigitalOcean Spaces
+- Cloudflare R2
+- Backblaze B2
+- Wasabi
+- Any S3-compatible storage service
+
+### Storage Configuration
+
+```json
+{
+  "accessKeyId": "your-access-key",
+  "accessKeySecret": "your-secret-key",
+  "endpoint": "https://s3.amazonaws.com",
+  "region": "us-east-1",
+  "bucket": "my-memos-bucket",
+  "usePathStyle": false
+}
+```
+
+### Configuration Parameters
+
+<ParamField path="accessKeyId" type="string" required>
+  AWS access key ID or equivalent for your S3 provider.
+</ParamField>
+
+<ParamField path="accessKeySecret" type="string" required>
+  AWS secret access key or equivalent for your S3 provider.
+</ParamField>
+
+<ParamField path="endpoint" type="string" required>
+  S3 endpoint URL. For AWS S3, use `https://s3.{region}.amazonaws.com`. For other providers, use their specific endpoint.
+</ParamField>
+
+<ParamField path="region" type="string" required>
+  Storage region (e.g., `us-east-1`, `eu-west-1`).
+</ParamField>
+
+<ParamField path="bucket" type="string" required>
+  Bucket name where files will be stored.
+</ParamField>
+
+<ParamField path="usePathStyle" type="boolean" default="false">
+  Use path-style URLs instead of virtual-hosted-style URLs. Set to `true` for MinIO and some other providers.
+</ParamField>
+
+### Storage Operations
+
+Memos uses the AWS SDK v2 for Go and supports:
+
+- **Upload**: Files are uploaded with proper content type detection
+- **Download**: Files are retrieved directly or via presigned URLs
+- **Delete**: Files are removed when attachments are deleted
+- **Presigning**: Generates temporary signed URLs valid for 5 days
+
+### Example: MinIO
+
+```json
+{
+  "accessKeyId": "minioadmin",
+  "accessKeySecret": "minioadmin",
+  "endpoint": "https://minio.example.com",
+  "region": "us-east-1",
+  "bucket": "memos",
+  "usePathStyle": true
+}
+```
+
+### Example: Cloudflare R2
+
+```json
+{
+  "accessKeyId": "your-r2-access-key-id",
+  "accessKeySecret": "your-r2-secret-access-key",
+  "endpoint": "https://your-account-id.r2.cloudflarestorage.com",
+  "region": "auto",
+  "bucket": "memos-attachments",
+  "usePathStyle": false
+}
+```
+
+### Example: DigitalOcean Spaces
+
+```json
+{
+  "accessKeyId": "your-spaces-access-key",
+  "accessKeySecret": "your-spaces-secret-key",
+  "endpoint": "https://nyc3.digitaloceanspaces.com",
+  "region": "nyc3",
+  "bucket": "my-memos-space",
+  "usePathStyle": false
+}
+```
+
+## Storage Types
+
+Memos supports three storage backends:
+
+### 1. Database Storage
+
+```
+STORAGE_TYPE_DATABASE
+```
+
+Attachments are stored directly in the database as binary blobs.
+
+**Pros:**
+- Simple setup, no external dependencies
+- Automatic backups with database backups
+- No additional configuration needed
+
+**Cons:**
+- Database size grows quickly with media files
+- Slower for large files
+- Not recommended for production
+
+### 2. Local Storage
+
+```
+STORAGE_TYPE_LOCAL
+```
+
+Attachments are stored on the local filesystem.
+
+**Pros:**
+- Fast access
+- No external dependencies
+- Good for self-hosted deployments
+
+**Cons:**
+- Not suitable for multi-instance deployments
+- Requires volume mounts in containerized environments
+- No built-in CDN support
+
+### 3. S3 Storage
+
+```
+STORAGE_TYPE_S3
+```
+
+Attachments are stored in S3-compatible object storage.
+
+**Pros:**
+- Scalable and reliable
+- CDN integration available
+- Suitable for multi-instance deployments
+- Offloads storage from application server
+
+**Cons:**
+- Requires external service
+- Additional cost
+- More complex configuration
+
+## Attachment Storage Flow
+
+### Upload Process
+
+1. Client uploads file via `/api/v1/attachments` endpoint
+2. Server validates file type and size
+3. Based on storage configuration:
+   - **Database**: Store blob in `attachment` table
+   - **Local**: Write file to `{data_dir}/attachments/{uid}/{filename}`
+   - **S3**: Upload to `s3://{bucket}/{key}` using AWS SDK
+4. Create attachment record with storage metadata
+5. Return attachment resource to client
+
+### Access Process
+
+- **Database/Local**: Files are served via `/file/attachments/{uid}/{filename}`
+- **S3**: Files are served via presigned URLs valid for 5 days
+- **External**: Direct reference URLs are used
+
+## Integration Management APIs
+
+### List Identity Providers
+
+```bash
+curl https://your-memos.com/api/v1/identityProviders \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Create Identity Provider
+
+```bash
+curl -X POST https://your-memos.com/api/v1/identityProviders \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "GitHub SSO",
+    "type": "OAUTH2",
+    "config": {
+      "oauth2Config": {
+        "clientId": "...",
+        "clientSecret": "...",
+        "authUrl": "https://github.com/login/oauth/authorize",
+        "tokenUrl": "https://github.com/login/oauth/access_token",
+        "userInfoUrl": "https://api.github.com/user",
+        "scopes": ["read:user", "user:email"],
+        "fieldMapping": {
+          "identifier": "login",
+          "displayName": "name",
+          "email": "email",
+          "avatarUrl": "avatar_url"
+        }
+      }
+    }
+  }'
+```
+
+### Update Storage Settings
+
+```bash
+curl -X PATCH https://your-memos.com/api/v1/instance/storage \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "storageType": "S3",
+    "s3Config": {
+      "accessKeyId": "...",
+      "accessKeySecret": "...",
+      "endpoint": "https://s3.amazonaws.com",
+      "region": "us-east-1",
+      "bucket": "my-bucket"
+    }
+  }'
+```
+
+<Warning>
+Changing storage type does not migrate existing attachments. Only new uploads will use the new storage backend.
+</Warning>
+
+## Security Considerations
+
+### OAuth 2.0
+
+- Client secrets should be kept secure and never committed to version control
+- Use HTTPS for all OAuth redirect URLs
+- Validate the `state` parameter to prevent CSRF attacks
+- Consider enabling PKCE for public clients
+- Restrict OAuth scopes to minimum required permissions
+
+### S3 Storage
+
+- Use IAM roles with least privilege access
+- Enable bucket versioning for data protection
+- Configure bucket policies to restrict public access
+- Use presigned URLs with short expiration times when possible
+- Enable server-side encryption at rest
+- Rotate access keys regularly
+
+## Troubleshooting
+
+### OAuth Login Fails
+
+**Possible causes:**
+
+1. Incorrect redirect URI in OAuth provider settings
+2. Invalid client ID or secret
+3. Missing required scopes
+4. Field mapping doesn't match provider's response
+
+**Solution:**
+
+Check server logs for detailed error messages and verify OAuth configuration matches the provider's documentation.
+
+### S3 Upload Fails
+
+**Possible causes:**
+
+1. Invalid credentials
+2. Incorrect bucket name or region
+3. Insufficient IAM permissions
+4. Network connectivity issues
+5. Wrong `usePathStyle` setting
+
+**Solution:**
+
+Test S3 connection using AWS CLI with the same credentials:
+
+```bash
+export AWS_ACCESS_KEY_ID="your-key"
+export AWS_SECRET_ACCESS_KEY="your-secret"
+aws s3 ls s3://your-bucket --endpoint-url=https://your-endpoint
+```
+
+### Presigned URLs Expire
+
+Presigned S3 URLs are valid for 5 days. After expiration, clients need to fetch a new URL from the Memos API.
+
+**Current behavior**: Hard-coded 5-day expiration in `plugin/storage/s3/s3.go:74`
+
+**Workaround**: For longer-lived URLs, consider using CloudFront or a CDN with custom URL signing.
+
+## Limitations
+
+- OAuth 2.0 only (no SAML, LDAP, or other protocols)
+- No automatic user provisioning from identity provider
+- Storage type cannot be changed without manual migration
+- Presigned S3 URLs have fixed 5-day expiration
+- No support for multiple storage backends simultaneously
+- Database storage not recommended for production use
+
+## Related Resources
+
+- [Authentication](/api/authentication) - Authentication mechanisms
+- [Attachment Resource](/api/attachments) - Attachment API
+- [Instance Settings](/configuration/environment-variables) - Configure integrations
+- [User Service](/api/users) - User management
