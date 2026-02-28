@@ -1,0 +1,131 @@
+{
+  "projectType": "saas",
+  "projectName": "Memos",
+  "projectDescription": "An open-source, self-hosted note-taking service with privacy-first design and markdown support.",
+  "theme": "almond",
+  "primaryColor": "#5B8DBE",
+  "lightColor": "#8DB5D9",
+  "darkColor": "#3D6A99",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Installation",
+            "pages": [
+              "installation/docker",
+              "installation/binary",
+              "installation/docker-compose",
+              "installation/kubernetes",
+              "installation/build-from-source"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/memos",
+              "features/markdown-support",
+              "features/attachments",
+              "features/tags-and-filters",
+              "features/shortcuts",
+              "features/explore-and-sharing"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/database",
+              "configuration/storage",
+              "configuration/authentication"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/architecture",
+              "advanced/backup-and-restore",
+              "advanced/security",
+              "advanced/performance-tuning"
+            ]
+          },
+          {
+            "group": "Developer Guide",
+            "pages": [
+              "development/setup",
+              "development/building",
+              "development/contributing",
+              "development/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/introduction",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "api/memos",
+              "api/users",
+              "api/attachments",
+              "api/shortcuts",
+              "api/activities"
+            ]
+          },
+          {
+            "group": "Integration",
+            "pages": [
+              "api/webhooks",
+              "api/rss-feeds",
+              "api/third-party"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Privacy-first self-hosted note-taking",
+    "Full markdown support with plain text storage",
+    "Lightweight single binary deployment",
+    "Multi-database support (SQLite, MySQL, PostgreSQL)",
+    "REST and gRPC APIs",
+    "Rich attachment handling with EXIF support",
+    "Tag-based organization and filtering",
+    "Social features (explore, sharing, reactions)",
+    "Dark mode and mobile-responsive interface",
+    "Webhook integration and RSS feeds"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/memos - Create memo",
+    "GET /api/v1/memos - List memos",
+    "GET /api/v1/memos/{id} - Get memo",
+    "PATCH /api/v1/memos/{id} - Update memo",
+    "DELETE /api/v1/memos/{id} - Delete memo",
+    "POST /api/v1/users - Create user",
+    "GET /api/v1/users - List users",
+    "POST /api/v1/auth/signin - Sign in",
+    "POST /api/v1/auth/signout - Sign out",
+    "POST /api/v1/attachments - Upload attachment",
+    "GET /api/v1/attachments - List attachments",
+    "POST /api/v1/shortcuts - Create shortcut",
+    "GET /api/v1/shortcuts - List shortcuts",
+    "GET /api/v1/activities - List activities"
+  ]
+}
