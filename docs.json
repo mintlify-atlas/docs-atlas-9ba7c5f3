@@ -99,7 +99,8 @@
               "api/users",
               "api/attachments",
               "api/shortcuts",
-              "api/activities"
+              "api/activities",
+              "api/instance"
             ]
           },
           {

@@ -694,10 +694,283 @@ curl http://localhost:8081/api/v1/auth/me \
 # User operations require matching user ID
 ```
 
+---
+
+## Get Current User
+
+<Note>
+Returns the authenticated user's information. Similar to OIDC's `/userinfo` endpoint.
+</Note>
+
+```bash GET /api/v1/auth/me
+curl https://your-memos-instance.com/api/v1/auth/me \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Request
+
+No parameters needed. The access token in the `Authorization` header identifies the user.
+
+### Response
+
+<ResponseField name="user" type="object">
+  The authenticated user's information
+  
+  <Expandable title="properties">
+    <ResponseField name="name" type="string">
+      The resource name of the user. Format: `users/{user_id}`
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Unique username for login
+    </ResponseField>
+    
+    <ResponseField name="role" type="string">
+      The user's role: `ADMIN` or `USER`
+    </ResponseField>
+    
+    <ResponseField name="email" type="string">
+      Email address (may be empty)
+    </ResponseField>
+    
+    <ResponseField name="display_name" type="string">
+      Display name shown in the UI
+    </ResponseField>
+    
+    <ResponseField name="avatar_url" type="string">
+      URL to user's avatar image
+    </ResponseField>
+    
+    <ResponseField name="description" type="string">
+      User bio/description
+    </ResponseField>
+    
+    <ResponseField name="state" type="string">
+      Account state: `NORMAL` or `ARCHIVED`
+    </ResponseField>
+    
+    <ResponseField name="create_time" type="timestamp">
+      Account creation timestamp
+    </ResponseField>
+    
+    <ResponseField name="update_time" type="timestamp">
+      Last update timestamp
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "user": {
+    "name": "users/123",
+    "username": "demo",
+    "role": "USER",
+    "email": "demo@example.com",
+    "displayName": "Demo User",
+    "avatarUrl": "https://example.com/avatar.jpg",
+    "description": "Just testing Memos",
+    "state": "NORMAL",
+    "createTime": "2024-01-01T00:00:00Z",
+    "updateTime": "2026-03-01T10:00:00Z"
+  }
+}
+```
+
+### Error Responses
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - Invalid or expired access token
+</ResponseField>
+
+---
+
+## Sign Out
+
+<Note>
+Terminates the user's authentication session by revoking the refresh token and clearing the authentication cookie.
+</Note>
+
+```bash POST /api/v1/auth/signout
+curl -X POST https://your-memos-instance.com/api/v1/auth/signout \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -b cookies.txt
+```
+
+### Request
+
+No parameters needed. The endpoint will:
+1. Revoke the refresh token (from `memos_refresh` cookie)
+2. Clear the authentication cookie
+3. Invalidate the current session
+
+<Info>
+The access token in the `Authorization` header is still technically valid until expiry (15 minutes), but the refresh token is immediately revoked, preventing session renewal.
+</Info>
+
+### Response
+
+Returns an empty response on success.
+
+```json
+{}
+```
+
+### Cookie Changes
+
+The `memos_refresh` cookie is cleared:
+```
+Set-Cookie: memos_refresh=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0
+```
+
+### Example
+
+```bash
+#!/bin/bash
+BASE_URL="https://your-memos-instance.com"
+
+# Sign out and clear cookies
+curl -X POST "$BASE_URL/api/v1/auth/signout" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -c cookies.txt \
+  -b cookies.txt
+
+# Subsequent refresh attempts will fail
+curl -X POST "$BASE_URL/api/v1/auth/refresh" \
+  -b cookies.txt
+# Returns: 401 Unauthenticated - refresh token not found
+```
+
+### Error Responses
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+---
+
+## Refresh Access Token
+
+<Note>
+Exchanges a valid refresh token for a new access token. The refresh token is read from the `memos_refresh` HttpOnly cookie.
+</Note>
+
+```bash POST /api/v1/auth/refresh
+curl -X POST https://your-memos-instance.com/api/v1/auth/refresh \
+  -b cookies.txt \
+  -c cookies.txt
+```
+
+### Request
+
+No request body needed. The refresh token is automatically read from the `memos_refresh` cookie.
+
+<Info>
+Memos implements **refresh token rotation** for security. Each refresh generates a new refresh token and invalidates the old one.
+</Info>
+
+### Response
+
+<ResponseField name="access_token" type="string">
+  The new short-lived access token (15-minute expiry)
+</ResponseField>
+
+<ResponseField name="expires_at" type="timestamp">
+  When the access token expires. Clients should refresh before this time.
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsImtpZCI6InYxIiwidHlwIjoiSldUIn0...",
+  "expiresAt": "2026-03-01T10:15:00Z"
+}
+```
+
+### Cookie Changes
+
+A new `memos_refresh` cookie is set with a fresh 30-day expiry:
+```
+Set-Cookie: memos_refresh=<new_token>; Path=/; HttpOnly; SameSite=Lax; Expires=Sun, 30 Mar 2026 10:00:00 GMT
+```
+
+### Token Rotation Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as Memos API
+    participant DB as Database
+    
+    Note over Client: Access token expired
+    
+    Client->>API: POST /api/v1/auth/refresh<br/>Cookie: memos_refresh=old_token
+    API->>API: Parse refresh token JWT
+    API->>DB: Validate token not revoked
+    DB-->>API: Token valid
+    API->>API: Generate new access token (15min)<br/>Generate new refresh token (30d)
+    API->>DB: Store new refresh token<br/>Remove old refresh token
+    API-->>Client: Set-Cookie: memos_refresh=new_token<br/>Response: {access_token}
+    
+    Note over Client: Old refresh token is now invalid
+```
+
+### Example Usage
+
+```bash
+#!/bin/bash
+BASE_URL="https://your-memos-instance.com"
+COOKIES="cookies.txt"
+
+# Initial sign in
+curl -s -c $COOKIES -X POST "$BASE_URL/api/v1/auth/signin" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "passwordCredentials": {
+      "username": "demo",
+      "password": "secret"
+    }
+  }' | jq -r '.accessToken' > access_token.txt
+
+ACCESS_TOKEN=$(cat access_token.txt)
+
+# Use access token for 15 minutes...
+curl "$BASE_URL/api/v1/memos" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# After 15 minutes, refresh token
+REFRESH_RESPONSE=$(curl -s -b $COOKIES -c $COOKIES -X POST "$BASE_URL/api/v1/auth/refresh")
+NEW_ACCESS_TOKEN=$(echo $REFRESH_RESPONSE | jq -r '.accessToken')
+
+# Continue using new access token
+curl "$BASE_URL/api/v1/memos" \
+  -H "Authorization: Bearer $NEW_ACCESS_TOKEN"
+```
+
+### Error Responses
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - Refresh token missing, expired, or revoked
+  
+  Common causes:
+  - No `memos_refresh` cookie sent
+  - Refresh token expired (older than 30 days)
+  - Token was revoked via sign out
+  - Token was already used (rotation invalidated it)
+</ResponseField>
+
+<Warning>
+If refresh fails with 401, the user must sign in again. There is no way to recover an expired or revoked refresh token.
+</Warning>
+
+---
+
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="API Reference" icon="book" href="/api/reference">
+  <Card title="API Reference" icon="book" href="/api/introduction">
     Explore detailed endpoint documentation
   </Card>
   <Card title="SDKs & Libraries" icon="code" href="/api/sdks">

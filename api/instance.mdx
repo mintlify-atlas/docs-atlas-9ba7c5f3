@@ -1,0 +1,687 @@
+---
+title: Instance
+description: API endpoints for instance configuration and profile information
+---
+
+## Overview
+
+The Instance API provides endpoints to retrieve instance profile information and manage instance-wide settings. These settings control core behaviors like user registration, storage backends, and memo-related policies.
+
+See: `server/router/api/v1/instance_service.go`
+
+## Get Instance Profile
+
+<Note>
+Returns basic information about the Memos instance. This is a **public endpoint** (no authentication required) used to check instance status and determine if initial setup is needed.
+</Note>
+
+```bash GET /api/v1/instance/profile
+curl https://your-memos-instance.com/api/v1/instance/profile
+```
+
+### Request
+
+No authentication or parameters required. This endpoint is publicly accessible.
+
+### Response
+
+<ResponseField name="version" type="string">
+  The current version of the Memos instance (e.g., `"0.28.0"`)
+</ResponseField>
+
+<ResponseField name="demo" type="boolean">
+  Whether the instance is running in demo mode with sample data
+</ResponseField>
+
+<ResponseField name="instance_url" type="string">
+  The base URL of the instance (e.g., `"https://memos.example.com"`)
+</ResponseField>
+
+<ResponseField name="admin" type="object">
+  The first administrator who set up this instance. When `null`, the instance requires initial setup (creating the first admin account).
+  
+  <Expandable title="properties">
+    <ResponseField name="name" type="string">
+      Resource name of the admin user. Format: `users/{user_id}`
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Admin username
+    </ResponseField>
+    
+    <ResponseField name="role" type="string">
+      Always `"ADMIN"`
+    </ResponseField>
+    
+    <ResponseField name="email" type="string">
+      Admin email address
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+**Configured Instance:**
+```json
+{
+  "version": "0.28.0",
+  "demo": false,
+  "instanceUrl": "https://memos.example.com",
+  "admin": {
+    "name": "users/101",
+    "username": "admin",
+    "role": "ADMIN",
+    "email": "admin@example.com"
+  }
+}
+```
+
+**Unconfigured Instance (needs setup):**
+```json
+{
+  "version": "0.28.0",
+  "demo": false,
+  "instanceUrl": "",
+  "admin": null
+}
+```
+
+### Usage
+
+Check if instance needs setup:
+```bash
+#!/bin/bash
+RESPONSE=$(curl -s https://your-memos-instance.com/api/v1/instance/profile)
+HAS_ADMIN=$(echo $RESPONSE | jq -r '.admin != null')
+
+if [ "$HAS_ADMIN" = "false" ]; then
+  echo "Instance requires setup - create first admin account"
+else
+  echo "Instance already configured"
+fi
+```
+
+---
+
+## Get Instance Setting
+
+<Note>
+Retrieves a specific instance setting configuration. Requires admin authentication.
+</Note>
+
+```bash GET /api/v1/instance/settings/{setting}
+curl https://your-memos-instance.com/api/v1/instance/settings/GENERAL \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Path Parameters
+
+<ParamField path="setting" type="string" required>
+  The setting type to retrieve. One of:
+  - `GENERAL` - General instance settings (registration, authentication, branding)
+  - `STORAGE` - Storage backend configuration (local, S3, database)
+  - `MEMO_RELATED` - Memo-related settings (visibility, reactions, content limits)
+</ParamField>
+
+### Response
+
+<ResponseField name="name" type="string">
+  The resource name of the setting. Format: `instance/settings/{setting}`
+</ResponseField>
+
+<ResponseField name="general_setting" type="object">
+  General instance settings. Only present when requesting `GENERAL` setting.
+  
+  <Expandable title="properties">
+    <ResponseField name="disallow_user_registration" type="boolean">
+      When `true`, new user registration is disabled. Only admins can create accounts.
+    </ResponseField>
+    
+    <ResponseField name="disallow_password_auth" type="boolean">
+      When `true`, password-based authentication is disabled. Users must use SSO.
+    </ResponseField>
+    
+    <ResponseField name="additional_script" type="string">
+      Custom JavaScript code injected into the web UI (e.g., analytics scripts)
+    </ResponseField>
+    
+    <ResponseField name="additional_style" type="string">
+      Custom CSS styles injected into the web UI (e.g., theme overrides)
+    </ResponseField>
+    
+    <ResponseField name="custom_profile" type="object">
+      Custom branding for the instance
+      
+      <Expandable title="properties">
+        <ResponseField name="title" type="string">
+          Custom instance title (shown in browser tab and header)
+        </ResponseField>
+        
+        <ResponseField name="description" type="string">
+          Instance description (shown on login page)
+        </ResponseField>
+        
+        <ResponseField name="logo_url" type="string">
+          URL to custom logo image
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="week_start_day_offset" type="integer">
+      Week start day offset from Sunday. Default: `0` (Sunday)
+      - `0` = Sunday
+      - `1` = Monday
+      - `2` = Tuesday
+      - `3` = Wednesday
+      - `4` = Thursday
+      - `5` = Friday
+      - `6` = Saturday
+    </ResponseField>
+    
+    <ResponseField name="disallow_change_username" type="boolean">
+      When `true`, users cannot change their username after creation
+    </ResponseField>
+    
+    <ResponseField name="disallow_change_nickname" type="boolean">
+      When `true`, users cannot change their display name
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="storage_setting" type="object">
+  Storage configuration. Only present when requesting `STORAGE` setting.
+  
+  <Expandable title="properties">
+    <ResponseField name="storage_type" type="string">
+      Storage backend type:
+      - `DATABASE` - Store files in the database (default, not recommended for large files)
+      - `LOCAL` - Store files on local filesystem
+      - `S3` - Store files in S3-compatible object storage (AWS S3, MinIO, Cloudflare R2)
+    </ResponseField>
+    
+    <ResponseField name="filepath_template" type="string">
+      Template for file paths. Supports variables:
+      - `{timestamp}` - Unix timestamp
+      - `{filename}` - Original filename
+      - `{uuid}` - Random UUID
+      
+      Example: `"assets/{timestamp}_{filename}"`
+    </ResponseField>
+    
+    <ResponseField name="upload_size_limit_mb" type="integer">
+      Maximum upload size in megabytes. Default: `32` MB
+    </ResponseField>
+    
+    <ResponseField name="s3_config" type="object">
+      S3 configuration (only used when `storage_type` is `S3`)
+      
+      <Expandable title="properties">
+        <ResponseField name="access_key_id" type="string">
+          AWS access key ID or equivalent for S3-compatible storage
+        </ResponseField>
+        
+        <ResponseField name="access_key_secret" type="string">
+          AWS secret access key (returned as empty string for security)
+        </ResponseField>
+        
+        <ResponseField name="endpoint" type="string">
+          S3 endpoint URL (e.g., `"s3.amazonaws.com"`, `"https://r2.cloudflarestorage.com"`)
+        </ResponseField>
+        
+        <ResponseField name="region" type="string">
+          AWS region (e.g., `"us-east-1"`)
+        </ResponseField>
+        
+        <ResponseField name="bucket" type="string">
+          S3 bucket name
+        </ResponseField>
+        
+        <ResponseField name="use_path_style" type="boolean">
+          Use path-style URLs (`true`) instead of virtual-hosted-style (`false`). Required for MinIO and some S3-compatible services.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="memo_related_setting" type="object">
+  Memo-related policies. Only present when requesting `MEMO_RELATED` setting.
+  
+  <Expandable title="properties">
+    <ResponseField name="disallow_public_visibility" type="boolean">
+      When `true`, users cannot create public memos. All memos must be private or protected.
+    </ResponseField>
+    
+    <ResponseField name="display_with_update_time" type="boolean">
+      When `true`, memos are ordered and displayed by update time instead of creation time
+    </ResponseField>
+    
+    <ResponseField name="content_length_limit" type="integer">
+      Maximum memo content length in bytes. Default: `8192` (8 KB)
+    </ResponseField>
+    
+    <ResponseField name="enable_double_click_edit" type="boolean">
+      When `true`, double-clicking a memo opens the editor
+    </ResponseField>
+    
+    <ResponseField name="reactions" type="array">
+      Array of allowed reaction emojis (e.g., `["👍", "❤️", "😄"]`). Empty array means all emojis allowed.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Responses
+
+**General Settings:**
+```json
+{
+  "name": "instance/settings/GENERAL",
+  "generalSetting": {
+    "disallowUserRegistration": false,
+    "disallowPasswordAuth": false,
+    "additionalScript": "",
+    "additionalStyle": "",
+    "customProfile": {
+      "title": "My Memos Instance",
+      "description": "A personal knowledge base",
+      "logoUrl": "https://example.com/logo.png"
+    },
+    "weekStartDayOffset": 1,
+    "disallowChangeUsername": false,
+    "disallowChangeNickname": false
+  }
+}
+```
+
+**Storage Settings:**
+```json
+{
+  "name": "instance/settings/STORAGE",
+  "storageSetting": {
+    "storageType": "S3",
+    "filepathTemplate": "assets/{timestamp}_{filename}",
+    "uploadSizeLimitMb": 100,
+    "s3Config": {
+      "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+      "accessKeySecret": "",
+      "endpoint": "s3.us-east-1.amazonaws.com",
+      "region": "us-east-1",
+      "bucket": "memos-uploads",
+      "usePathStyle": false
+    }
+  }
+}
+```
+
+**Memo Related Settings:**
+```json
+{
+  "name": "instance/settings/MEMO_RELATED",
+  "memoRelatedSetting": {
+    "disallowPublicVisibility": false,
+    "displayWithUpdateTime": false,
+    "contentLengthLimit": 8192,
+    "enableDoubleClickEdit": true,
+    "reactions": ["👍", "👎", "❤️", "😄", "🎉", "🚀"]
+  }
+}
+```
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid setting name
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User is not an admin
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Setting not found or not configured
+</ResponseField>
+
+---
+
+## Update Instance Setting
+
+<Note>
+Updates an instance setting. Supports partial updates via field masks. Requires admin authentication.
+</Note>
+
+```bash PATCH /api/v1/instance/settings/{setting}
+curl -X PATCH https://your-memos-instance.com/api/v1/instance/settings/GENERAL \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/GENERAL",
+      "generalSetting": {
+        "disallowUserRegistration": true,
+        "customProfile": {
+          "title": "Team Memos"
+        }
+      }
+    },
+    "updateMask": {
+      "paths": ["general_setting.disallow_user_registration", "general_setting.custom_profile.title"]
+    }
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="setting" type="string" required>
+  The setting type to update: `GENERAL`, `STORAGE`, or `MEMO_RELATED`
+</ParamField>
+
+### Request Body
+
+<ParamField body="setting" type="object" required>
+  The setting object with updated fields. Must include `name` field matching the path parameter.
+</ParamField>
+
+<ParamField body="update_mask" type="object">
+  Optional field mask specifying which fields to update. If omitted, all fields are updated.
+  
+  <Expandable title="paths">
+    <ParamField body="paths" type="array">
+      Array of field paths to update (e.g., `["general_setting.disallow_user_registration"]`)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Updatable Fields
+
+**General Settings:**
+- `general_setting.disallow_user_registration`
+- `general_setting.disallow_password_auth`
+- `general_setting.additional_script`
+- `general_setting.additional_style`
+- `general_setting.custom_profile.title`
+- `general_setting.custom_profile.description`
+- `general_setting.custom_profile.logo_url`
+- `general_setting.week_start_day_offset`
+- `general_setting.disallow_change_username`
+- `general_setting.disallow_change_nickname`
+
+**Storage Settings:**
+- `storage_setting.storage_type`
+- `storage_setting.filepath_template`
+- `storage_setting.upload_size_limit_mb`
+- `storage_setting.s3_config.access_key_id`
+- `storage_setting.s3_config.access_key_secret`
+- `storage_setting.s3_config.endpoint`
+- `storage_setting.s3_config.region`
+- `storage_setting.s3_config.bucket`
+- `storage_setting.s3_config.use_path_style`
+
+**Memo Related Settings:**
+- `memo_related_setting.disallow_public_visibility`
+- `memo_related_setting.display_with_update_time`
+- `memo_related_setting.content_length_limit`
+- `memo_related_setting.enable_double_click_edit`
+- `memo_related_setting.reactions`
+
+### Response
+
+Returns the updated setting object (same structure as Get Instance Setting).
+
+### Examples
+
+**Disable User Registration:**
+```bash
+curl -X PATCH https://your-memos-instance.com/api/v1/instance/settings/GENERAL \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/GENERAL",
+      "generalSetting": {
+        "disallowUserRegistration": true
+      }
+    },
+    "updateMask": {
+      "paths": ["general_setting.disallow_user_registration"]
+    }
+  }'
+```
+
+**Configure S3 Storage:**
+```bash
+curl -X PATCH https://your-memos-instance.com/api/v1/instance/settings/STORAGE \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/STORAGE",
+      "storageSetting": {
+        "storageType": "S3",
+        "uploadSizeLimitMb": 100,
+        "s3Config": {
+          "accessKeyId": "YOUR_KEY_ID",
+          "accessKeySecret": "YOUR_SECRET",
+          "endpoint": "s3.amazonaws.com",
+          "region": "us-east-1",
+          "bucket": "memos-uploads",
+          "usePathStyle": false
+        }
+      }
+    },
+    "updateMask": {
+      "paths": [
+        "storage_setting.storage_type",
+        "storage_setting.upload_size_limit_mb",
+        "storage_setting.s3_config"
+      ]
+    }
+  }'
+```
+
+**Set Custom Branding:**
+```bash
+curl -X PATCH https://your-memos-instance.com/api/v1/instance/settings/GENERAL \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/GENERAL",
+      "generalSetting": {
+        "customProfile": {
+          "title": "Acme Corp Memos",
+          "description": "Internal knowledge sharing platform",
+          "logoUrl": "https://acme.com/logo.png"
+        }
+      }
+    },
+    "updateMask": {
+      "paths": ["general_setting.custom_profile"]
+    }
+  }'
+```
+
+**Limit Memo Content Length:**
+```bash
+curl -X PATCH https://your-memos-instance.com/api/v1/instance/settings/MEMO_RELATED \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/MEMO_RELATED",
+      "memoRelatedSetting": {
+        "contentLengthLimit": 16384
+      }
+    },
+    "updateMask": {
+      "paths": ["memo_related_setting.content_length_limit"]
+    }
+  }'
+```
+
+**Configure Allowed Reactions:**
+```bash
+curl -X PATCH https://your-memos-instance.com/api/v1/instance/settings/MEMO_RELATED \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/MEMO_RELATED",
+      "memoRelatedSetting": {
+        "reactions": ["👍", "👎", "❤️", "🎉"]
+      }
+    },
+    "updateMask": {
+      "paths": ["memo_related_setting.reactions"]
+    }
+  }'
+```
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  **Invalid Argument** - Invalid setting name, invalid field values, or invalid update mask
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  **Unauthenticated** - User not authenticated
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  **Permission Denied** - User is not an admin
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  **Not Found** - Setting not found
+</ResponseField>
+
+---
+
+## Common Use Cases
+
+### Check Instance Setup Status
+
+```bash
+#!/bin/bash
+# Determine if instance needs initial setup
+
+PROFILE=$(curl -s https://your-memos-instance.com/api/v1/instance/profile)
+NEEDS_SETUP=$(echo $PROFILE | jq -r '.admin == null')
+
+if [ "$NEEDS_SETUP" = "true" ]; then
+  echo "Instance needs setup - creating first admin account"
+  
+  # Create first admin user
+  curl -X POST https://your-memos-instance.com/api/v1/users \
+    -H "Content-Type: application/json" \
+    -d '{
+      "user": {
+        "username": "admin",
+        "password": "secure_password",
+        "role": "ADMIN"
+      }
+    }'
+else
+  echo "Instance already configured"
+  echo "Admin: $(echo $PROFILE | jq -r '.admin.username')"
+  echo "Version: $(echo $PROFILE | jq -r '.version')"
+fi
+```
+
+### Configure Private Instance
+
+```bash
+#!/bin/bash
+# Lock down instance for private use
+
+BASE_URL="https://your-memos-instance.com"
+TOKEN="YOUR_ADMIN_TOKEN"
+
+# Disable user registration
+curl -X PATCH "$BASE_URL/api/v1/instance/settings/GENERAL" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/GENERAL",
+      "generalSetting": {
+        "disallowUserRegistration": true
+      }
+    },
+    "updateMask": {"paths": ["general_setting.disallow_user_registration"]}
+  }'
+
+# Disable public memos
+curl -X PATCH "$BASE_URL/api/v1/instance/settings/MEMO_RELATED" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/MEMO_RELATED",
+      "memoRelatedSetting": {
+        "disallowPublicVisibility": true
+      }
+    },
+    "updateMask": {"paths": ["memo_related_setting.disallow_public_visibility"]}
+  }'
+
+echo "Instance configured for private use"
+```
+
+### Migrate to S3 Storage
+
+```bash
+#!/bin/bash
+# Switch from database/local storage to S3
+
+BASE_URL="https://your-memos-instance.com"
+TOKEN="YOUR_ADMIN_TOKEN"
+
+curl -X PATCH "$BASE_URL/api/v1/instance/settings/STORAGE" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "setting": {
+      "name": "instance/settings/STORAGE",
+      "storageSetting": {
+        "storageType": "S3",
+        "filepathTemplate": "memos/{timestamp}_{filename}",
+        "uploadSizeLimitMb": 100,
+        "s3Config": {
+          "accessKeyId": "'$S3_ACCESS_KEY'",
+          "accessKeySecret": "'$S3_SECRET_KEY'",
+          "endpoint": "s3.amazonaws.com",
+          "region": "us-east-1",
+          "bucket": "my-memos-bucket",
+          "usePathStyle": false
+        }
+      }
+    }
+  }'
+
+echo "Storage migrated to S3"
+```
+
+<Warning>
+Changing storage settings does **not** migrate existing files. You must manually migrate attachments from the old storage backend to the new one.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/authentication">
+    Learn about authentication methods and admin privileges
+  </Card>
+  <Card title="Users" icon="users" href="/api/users">
+    Manage user accounts and permissions
+  </Card>
+  <Card title="Configuration Guide" icon="gear" href="/configuration/environment-variables">
+    Configure instance settings via environment variables
+  </Card>
+  <Card title="Storage Configuration" icon="database" href="/configuration/storage">
+    Set up S3, local, or database storage
+  </Card>
+</CardGroup>
